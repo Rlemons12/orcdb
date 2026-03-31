@@ -1,4 +1,10 @@
 .env
 .venv/
+__pycache__/
 data/
 outputs/
+.idea/
+configuration/logs/
+email_service/log/*.log
+orcale eam table map.html
+orcale eam table map.pdf
