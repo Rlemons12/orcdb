@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+
+{% block title %}{{ category }} - Oracle DB Reports{% endblock %}
+
+{% block content %}
+<div class="container">
+    <!-- Breadcrumb -->
+    <nav class="breadcrumb">
+        <a href="{{ url_for('main.index') }}">
+            <i class="fas fa-home"></i> Dashboard
+        </a>
+        <i class="fas fa-chevron-right"></i>
+        <a href="{{ url_for('reports.index') }}">Reports</a>
+        <i class="fas fa-chevron-right"></i>
+        <span>{{ category }}</span>
+    </nav>
+
+    <!-- Page Header -->
+    <div class="page-header">
+        <h1>
+            <i class="fas fa-folder-open"></i> {{ category }}
+        </h1>
+        <p class="subtitle">{{ reports|length }} report(s) available</p>
+    </div>
+
+    <!-- Reports Table -->
+    {% if reports %}
+    <div class="section">
+        <div class="table-responsive">
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>Report Name</th>
+                        <th>Size</th>
+                        <th>Generated</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for report in reports %}
+                    <tr>
+                        <td>
+                            <i class="fas fa-file-excel text-success"></i>
+                            {{ report.name }}
+                        </td>
+                        <td>{{ report.size }}</td>
+                        <td>
+                            <i class="fas fa-clock"></i>
+                            {{ report.modified_str }}
+                        </td>
+                        <td>
+                            <div class="btn-group">
+                                <a href="{{ url_for('reports.download', filepath=report.path) }}" 
+                                   class="btn btn-sm btn-success" 
+                                   title="Download">
+                                    <i class="fas fa-download"></i> Download
+                                </a>
+                                <a href="{{ url_for('reports.preview', filepath=report.path) }}" 
+                                   class="btn btn-sm btn-info" 
+                                   title="Preview">
+                                    <i class="fas fa-eye"></i> Preview
+                                </a>
+                            </div>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    {% else %}
+    <div class="empty-state">
+        <i class="fas fa-inbox"></i>
+        <h3>No Reports in This Category</h3>
+        <p>Reports will appear here once generated</p>
+    </div>
+    {% endif %}
+
+    <!-- Back Button -->
+    <div class="text-center" style="margin-top: 2rem;">
+        <a href="{{ url_for('reports.index') }}" class="btn btn-secondary">
+            <i class="fas fa-arrow-left"></i> Back to All Reports
+        </a>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,193 @@
+{% extends "base.html" %}
+
+{% block title %}Contacts - Oracle DB Reports{% endblock %}
+
+{% block content %}
+<div class="container">
+    <!-- Page Header -->
+    <div class="page-header">
+        <h1><i class="fas fa-address-book"></i> Contact Management</h1>
+        <p class="subtitle">Manage contacts and email groups for report distribution</p>
+    </div>
+
+    <!-- Action Buttons -->
+    <div class="section">
+        <div class="action-buttons">
+            <button class="btn btn-primary" onclick="showAddContactModal()">
+                <i class="fas fa-user-plus"></i> Add Contact
+            </button>
+            <button class="btn btn-primary" onclick="showAddGroupModal()">
+                <i class="fas fa-users"></i> Create Group
+            </button>
+            <button class="btn btn-secondary" onclick="loadContacts()">
+                <i class="fas fa-sync"></i> Refresh
+            </button>
+        </div>
+    </div>
+
+    <!-- Tab Navigation -->
+    <div class="tabs">
+        <button class="tab-btn active" onclick="switchTab('contacts')">
+            <i class="fas fa-user"></i> Contacts
+        </button>
+        <button class="tab-btn" onclick="switchTab('groups')">
+            <i class="fas fa-users"></i> Groups
+        </button>
+    </div>
+
+    <!-- Contacts Tab -->
+    <div id="contacts-tab" class="tab-content active">
+        <div class="section">
+            <div class="section-header">
+                <h2><i class="fas fa-search"></i> Search Contacts</h2>
+            </div>
+            <input type="text" 
+                   id="contactSearch" 
+                   class="form-input" 
+                   placeholder="Search by name, email, or department..."
+                   onkeyup="searchContacts()">
+        </div>
+
+        <div class="section">
+            <h2><i class="fas fa-list"></i> All Contacts (<span id="contactCount">0</span>)</h2>
+            <div id="contactsList">
+                <div class="loading">Loading contacts...</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Groups Tab -->
+    <div id="groups-tab" class="tab-content">
+        <div class="section">
+            <h2><i class="fas fa-users"></i> All Groups (<span id="groupCount">0</span>)</h2>
+            <div id="groupsList">
+                <div class="loading">Loading groups...</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Add/Edit Contact Modal -->
+<div id="contactModal" class="modal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h2 id="contactModalTitle"><i class="fas fa-user-plus"></i> Add Contact</h2>
+            <span class="close" onclick="closeContactModal()">&times;</span>
+        </div>
+        <div class="modal-body">
+            <form id="contactForm" onsubmit="saveContact(event)">
+                <input type="hidden" id="contactId">
+                
+                <div class="form-group">
+                    <label for="contactName"><i class="fas fa-user"></i> Name *</label>
+                    <input type="text" id="contactName" class="form-input" required>
+                </div>
+                
+                <div class="form-group">
+                    <label for="contactEmail"><i class="fas fa-envelope"></i> Email *</label>
+                    <input type="email" id="contactEmail" class="form-input" required>
+                </div>
+                
+                <div class="form-group">
+                    <label for="contactTitle"><i class="fas fa-briefcase"></i> Title</label>
+                    <input type="text" id="contactTitle" class="form-input">
+                </div>
+                
+                <div class="form-group">
+                    <label for="contactDepartment"><i class="fas fa-building"></i> Department</label>
+                    <input type="text" id="contactDepartment" class="form-input">
+                </div>
+                
+                <div class="form-group">
+                    <label for="contactPhone"><i class="fas fa-phone"></i> Phone</label>
+                    <input type="tel" id="contactPhone" class="form-input">
+                </div>
+                
+                <div class="form-group">
+                    <label for="contactNotes"><i class="fas fa-sticky-note"></i> Notes</label>
+                    <textarea id="contactNotes" class="form-input" rows="3"></textarea>
+                </div>
+                
+                <div class="button-group">
+                    <button type="submit" class="btn btn-primary">
+                        <i class="fas fa-save"></i> Save Contact
+                    </button>
+                    <button type="button" class="btn btn-secondary" onclick="closeContactModal()">
+                        <i class="fas fa-times"></i> Cancel
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Add/Edit Group Modal -->
+<div id="groupModal" class="modal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h2 id="groupModalTitle"><i class="fas fa-users"></i> Create Group</h2>
+            <span class="close" onclick="closeGroupModal()">&times;</span>
+        </div>
+        <div class="modal-body">
+            <form id="groupForm" onsubmit="saveGroup(event)">
+                <input type="hidden" id="groupId">
+                
+                <div class="form-group">
+                    <label for="groupName"><i class="fas fa-tag"></i> Group Name *</label>
+                    <input type="text" id="groupName" class="form-input" required>
+                </div>
+                
+                <div class="form-group">
+                    <label for="groupDescription"><i class="fas fa-align-left"></i> Description</label>
+                    <textarea id="groupDescription" class="form-input" rows="2"></textarea>
+                </div>
+                
+                <div class="form-group">
+                    <label><i class="fas fa-user-friends"></i> Select Members</label>
+                    <div id="memberSelection" class="member-selection">
+                        <div class="loading">Loading contacts...</div>
+                    </div>
+                </div>
+                
+                <div class="button-group">
+                    <button type="submit" class="btn btn-primary">
+                        <i class="fas fa-save"></i> Save Group
+                    </button>
+                    <button type="button" class="btn btn-secondary" onclick="closeGroupModal()">
+                        <i class="fas fa-times"></i> Cancel
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- View Group Details Modal -->
+<div id="viewGroupModal" class="modal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h2><i class="fas fa-users"></i> <span id="viewGroupName"></span></h2>
+            <span class="close" onclick="closeViewGroupModal()">&times;</span>
+        </div>
+        <div class="modal-body">
+            <p id="viewGroupDescription"></p>
+            <h3>Members (<span id="viewGroupMemberCount">0</span>)</h3>
+            <div id="viewGroupMembers" class="group-members-list">
+                <div class="loading">Loading...</div>
+            </div>
+            <div class="button-group" style="margin-top: 1.5rem;">
+                <button class="btn btn-primary" onclick="emailGroup()">
+                    <i class="fas fa-envelope"></i> Email This Group
+                </button>
+                <button class="btn btn-secondary" onclick="closeViewGroupModal()">
+                    <i class="fas fa-times"></i> Close
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="{{ url_for('static', filename='js/contacts.js') }}"></script>
+{% endblock %}

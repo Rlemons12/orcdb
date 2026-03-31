@@ -1,0 +1,179 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard - Oracle DB Reports{% endblock %}
+
+{% block content %}
+<div class="container">
+    <!-- Page Header -->
+    <div class="page-header">
+        <h1><i class="fas fa-chart-line"></i> Dashboard</h1>
+        <p class="subtitle">Oracle Database Reporting System Overview</p>
+    </div>
+
+    <!-- Statistics Cards -->
+    <div class="stats-grid">
+        <div class="stat-card">
+            <div class="stat-icon" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">
+                <i class="fas fa-file-excel"></i>
+            </div>
+            <div class="stat-details">
+                <h3>{{ stats.total_reports }}</h3>
+                <p>Total Reports</p>
+            </div>
+        </div>
+
+        <div class="stat-card">
+            <div class="stat-icon" style="background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);">
+                <i class="fas fa-clock"></i>
+            </div>
+            <div class="stat-details">
+                <h3>{{ stats.today_count }}</h3>
+                <p>Generated Today</p>
+            </div>
+        </div>
+
+        <div class="stat-card">
+            <div class="stat-icon" style="background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);">
+                <i class="fas fa-calendar-week"></i>
+            </div>
+            <div class="stat-details">
+                <h3>{{ stats.week_count }}</h3>
+                <p>This Week</p>
+            </div>
+        </div>
+
+        <div class="stat-card">
+            <div class="stat-icon" style="background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%);">
+                <i class="fas fa-folder-open"></i>
+            </div>
+            <div class="stat-details">
+                <h3>{{ stats.categories }}</h3>
+                <p>Categories</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Quick Actions -->
+    <div class="section">
+        <h2><i class="fas fa-bolt"></i> Quick Actions</h2>
+        <div class="action-buttons">
+            <button class="btn btn-primary" id="quickGenerateBtn">
+                <i class="fas fa-play-circle"></i> Generate New Report
+            </button>
+            <a href="{{ url_for('reports.index') }}" class="btn btn-secondary">
+                <i class="fas fa-search"></i> Browse All Reports
+            </a>
+            <button class="btn btn-info" id="viewJobsBtn">
+                <i class="fas fa-tasks"></i> View Active Jobs
+            </button>
+        </div>
+    </div>
+
+    <!-- Recent Reports -->
+    <div class="section">
+        <h2><i class="fas fa-history"></i> Recent Reports</h2>
+        
+        {% if recent_reports %}
+        <div class="table-responsive">
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>Report Name</th>
+                        <th>Category</th>
+                        <th>Size</th>
+                        <th>Generated</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for report in recent_reports %}
+                    <tr>
+                        <td>
+                            <i class="fas fa-file-excel text-success"></i>
+                            {{ report.name }}
+                        </td>
+                        <td>
+                            <span class="badge badge-primary">{{ report.category }}</span>
+                        </td>
+                        <td>{{ report.size }}</td>
+                        <td>{{ report.modified_str }}</td>
+                        <td>
+                            <a href="{{ url_for('reports.download', filepath=report.path) }}" 
+                               class="btn btn-sm btn-success" 
+                               title="Download">
+                                <i class="fas fa-download"></i>
+                            </a>
+                            <a href="{{ url_for('reports.preview', filepath=report.path) }}" 
+                               class="btn btn-sm btn-info" 
+                               title="Preview">
+                                <i class="fas fa-eye"></i>
+                            </a>
+                           <button
+                                onclick='showEmailReportModal({{ report.path | tojson }}, {{ report.name | tojson }})'
+                                class="btn btn-sm btn-primary"
+                                title="Email Report">
+                                <i class="fas fa-envelope"></i>
+                            </button>
+
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <div class="text-center" style="margin-top: 1rem;">
+            <a href="{{ url_for('reports.index') }}" class="btn btn-secondary">
+                View All Reports <i class="fas fa-arrow-right"></i>
+            </a>
+        </div>
+        {% else %}
+        <div class="empty-state">
+            <i class="fas fa-inbox"></i>
+            <p>No reports generated yet</p>
+            <button class="btn btn-primary" id="emptyGenerateBtn">
+                Generate Your First Report
+            </button>
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- System Status -->
+    <div class="section">
+        <h2><i class="fas fa-heartbeat"></i> System Status</h2>
+        <div class="status-panel">
+            <div class="status-item">
+                <span class="status-indicator status-online"></span>
+                <span>Database Connection: <strong>Online</strong></span>
+            </div>
+            <div class="status-item">
+                <span class="status-indicator status-online"></span>
+                <span>Report Generator: <strong>Ready</strong></span>
+            </div>
+            <div class="status-item">
+                <i class="fas fa-hdd"></i>
+                <span>Total Storage Used: <strong>{{ stats.total_size_str }}</strong></span>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    // Quick action buttons
+    document.getElementById('quickGenerateBtn').addEventListener('click', () => {
+        document.getElementById('generateReportBtn').click();
+    });
+
+    if (document.getElementById('emptyGenerateBtn')) {
+        document.getElementById('emptyGenerateBtn').addEventListener('click', () => {
+            document.getElementById('generateReportBtn').click();
+        });
+    }
+
+    document.getElementById('viewJobsBtn').addEventListener('click', () => {
+        loadAllJobs();
+    });
+</script>
+{% endblock %}

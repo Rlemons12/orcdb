@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Oracle DB Reports{% endblock %}</title>
+    
+    <!-- CSS -->
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    
+    <!-- Font Awesome for icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    {% block extra_css %}{% endblock %}
+</head>
+<body>
+    <!-- Navigation -->
+    <nav class="navbar">
+        <div class="nav-container">
+            <a href="{{ url_for('main.index') }}" class="nav-brand">
+                <i class="fas fa-database"></i>
+                Oracle DB Reports
+            </a>
+            
+            <ul class="nav-menu">
+                <li class="nav-item">
+                    <a href="{{ url_for('main.index') }}" class="nav-link">
+                        <i class="fas fa-home"></i> Dashboard
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a href="{{ url_for('reports.index') }}" class="nav-link">
+                        <i class="fas fa-file-alt"></i> Browse Reports
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a href="{{ url_for('contacts.index') }}" class="nav-link">
+                        <i class="fas fa-address-book"></i> Contacts
+                    </a>
+                </li>
+                <!-- NEW: Analytics Link -->
+                <li class="nav-item">
+                    <a href="/analytics" class="nav-link">
+                        <i class="fas fa-chart-bar"></i> Analytics
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a href="#" class="nav-link" id="generateReportBtn">
+                        <i class="fas fa-play-circle"></i> Generate Report
+                    </a>
+                </li>
+            </ul>
+        </div>
+    </nav>
+
+    <!-- Main Content -->
+    <main class="main-content">
+        {% block content %}{% endblock %}
+    </main>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="footer-content">
+            <p>&copy; 2026 Oracle DB Reporting System</p>
+            <p>Powered by Flask & Python</p>
+        </div>
+    </footer>
+
+    <!-- Generate Report Modal (Updated with Email Support) -->
+    <div id="generateModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2><i class="fas fa-play-circle"></i> Generate Report</h2>
+                <span class="close">&times;</span>
+            </div>
+            <div class="modal-body">
+                <div id="reportTypesList" class="report-types-list">
+                    <div class="loading">Loading available reports...</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Job Status Modal -->
+    <div id="jobStatusModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2><i class="fas fa-tasks"></i> Job Status</h2>
+                <span class="close">&times;</span>
+            </div>
+            <div class="modal-body">
+                <div id="jobStatusContent">
+                    <!-- Populated by JavaScript -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- JavaScript -->
+    <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+    {% block extra_js %}{% endblock %}
+</body>
+</html>

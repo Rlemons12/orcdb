@@ -1,0 +1,153 @@
+{% extends "base.html" %}
+
+{% block title %}WIP Analytics - Oracle DB Reports{% endblock %}
+
+{% block content %}
+<div class="container">
+    <!-- Page Header -->
+    <div class="page-header">
+        <h1><i class="fas fa-chart-bar"></i> WIP Analytics Dashboard</h1>
+        <p class="subtitle">Visual analysis of Work In Progress data</p>
+    </div>
+
+    <!-- Report Selection -->
+    <div class="section">
+        <h2><i class="fas fa-file-excel"></i> Select Report to Analyze</h2>
+        <div class="form-group">
+            <select id="reportSelect" class="form-input" onchange="loadAnalytics()">
+                <option value="">Select a report...</option>
+            </select>
+        </div>
+    </div>
+
+    <!-- Loading Indicator -->
+    <div id="loadingIndicator" class="loading" style="display: none;">
+        <i class="fas fa-spinner fa-spin"></i> Analyzing data...
+    </div>
+
+    <!-- Summary Statistics -->
+    <div id="summarySection" class="section" style="display: none;">
+        <h2><i class="fas fa-info-circle"></i> Summary Statistics</h2>
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="stat-icon" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">
+                    <i class="fas fa-clipboard-list"></i>
+                </div>
+                <div class="stat-details">
+                    <h3 id="totalRecords">0</h3>
+                    <p>Total Records</p>
+                </div>
+            </div>
+
+            <div class="stat-card">
+                <div class="stat-icon" style="background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);">
+                    <i class="fas fa-cubes"></i>
+                </div>
+                <div class="stat-details">
+                    <h3 id="uniqueEntities">0</h3>
+                    <p>Unique Entities</p>
+                </div>
+            </div>
+
+            <div class="stat-card">
+                <div class="stat-icon" style="background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);">
+                    <i class="fas fa-tools"></i>
+                </div>
+                <div class="stat-details">
+                    <h3 id="uniqueAssets">0</h3>
+                    <p>Unique Assets</p>
+                </div>
+            </div>
+
+            <div class="stat-card">
+                <div class="stat-icon" style="background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%);">
+                    <i class="fas fa-map-marker-alt"></i>
+                </div>
+                <div class="stat-details">
+                    <h3 id="uniqueLocations">0</h3>
+                    <p>Unique Locations</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Charts Section -->
+    <div id="chartsSection" class="section" style="display: none;">
+        <!-- Daily Trend Chart -->
+        <div class="chart-container">
+            <h2><i class="fas fa-chart-line"></i> Daily Creation Trend</h2>
+            <canvas id="dailyTrendChart"></canvas>
+        </div>
+
+        <!-- Activity Breakdown -->
+        <div class="chart-container">
+            <h2><i class="fas fa-chart-pie"></i> Activity Breakdown</h2>
+            <canvas id="activityChart"></canvas>
+        </div>
+
+        <!-- Top Locations -->
+        <div class="chart-container">
+            <h2><i class="fas fa-chart-bar"></i> Top Locations</h2>
+            <canvas id="locationsChart"></canvas>
+        </div>
+
+        <!-- Top Assets -->
+        <div class="chart-container">
+            <h2><i class="fas fa-chart-bar"></i> Top Assets</h2>
+            <canvas id="assetsChart"></canvas>
+        </div>
+
+        <!-- User Activity -->
+        <div class="chart-container">
+            <h2><i class="fas fa-users"></i> User Activity</h2>
+            <canvas id="usersChart"></canvas>
+        </div>
+
+        <!-- Reason Breakdown -->
+        <div class="chart-container">
+            <h2><i class="fas fa-clipboard-check"></i> Reason Breakdown</h2>
+            <canvas id="reasonsChart"></canvas>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_css %}
+<style>
+    .chart-container {
+        background: white;
+        padding: 2rem;
+        border-radius: 0.5rem;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+        margin-bottom: 2rem;
+    }
+
+    .chart-container h2 {
+        margin-bottom: 1.5rem;
+        color: #1f2937;
+        font-size: 1.25rem;
+    }
+
+    .chart-container canvas {
+        max-height: 400px;
+    }
+
+    .loading {
+        text-align: center;
+        padding: 3rem;
+        font-size: 1.25rem;
+        color: #6b7280;
+    }
+
+    .loading i {
+        font-size: 2rem;
+        margin-bottom: 1rem;
+    }
+</style>
+{% endblock %}
+
+{% block extra_js %}
+<!-- Chart.js -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script src="{{ url_for('static', filename='js/analytics.js') }}"></script>
+{% endblock %}

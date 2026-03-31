@@ -1,0 +1,18 @@
+# Flask Web Framework
+Flask==3.0.0
+Werkzeug==3.0.1
+
+# Environment variables
+python-dotenv==1.0.0
+
+# Oracle Database
+oracledb==2.0.0
+
+# Excel file handling
+openpyxl==3.1.2
+
+# CSV and data processing (if needed)
+pandas==2.1.4
+
+# Optional: Production server
+gunicorn==21.2.0

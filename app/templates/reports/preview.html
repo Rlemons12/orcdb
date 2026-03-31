@@ -1,0 +1,92 @@
+{% extends "base.html" %}
+
+{% block title %}{{ file.name }} - Oracle DB Reports{% endblock %}
+
+{% block content %}
+<div class="container">
+    <!-- Breadcrumb -->
+    <nav class="breadcrumb">
+        <a href="{{ url_for('main.index') }}">
+            <i class="fas fa-home"></i> Dashboard
+        </a>
+        <i class="fas fa-chevron-right"></i>
+        <a href="{{ url_for('reports.index') }}">Reports</a>
+        <i class="fas fa-chevron-right"></i>
+        <a href="{{ url_for('reports.category', category=file.category) }}">
+            {{ file.category|replace('_', ' ')|title }}
+        </a>
+        <i class="fas fa-chevron-right"></i>
+        <span>{{ file.name }}</span>
+    </nav>
+
+    <!-- Page Header -->
+    <div class="page-header">
+        <h1>
+            <i class="fas fa-file-excel text-success"></i> 
+            Report Preview
+        </h1>
+    </div>
+
+    <!-- File Information Card -->
+    <div class="section">
+        <div class="info-card">
+            <div class="info-card-header">
+                <h2><i class="fas fa-info-circle"></i> File Information</h2>
+            </div>
+            <div class="info-card-body">
+                <div class="info-grid">
+                    <div class="info-item">
+                        <label><i class="fas fa-file"></i> File Name</label>
+                        <p>{{ file.name }}</p>
+                    </div>
+                    <div class="info-item">
+                        <label><i class="fas fa-folder"></i> Category</label>
+                        <p>
+                            <span class="badge badge-primary">
+                                {{ file.category|replace('_', ' ')|title }}
+                            </span>
+                        </p>
+                    </div>
+                    <div class="info-item">
+                        <label><i class="fas fa-hdd"></i> File Size</label>
+                        <p>{{ file.size }} ({{ "{:,}".format(file.size_bytes) }} bytes)</p>
+                    </div>
+                    <div class="info-item">
+                        <label><i class="fas fa-clock"></i> Generated</label>
+                        <p>{{ file.modified }}</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Actions -->
+    <div class="section">
+        <h2><i class="fas fa-tools"></i> Actions</h2>
+        <div class="action-buttons">
+            <a href="{{ url_for('reports.download', filepath=file.path) }}" 
+               class="btn btn-success btn-lg">
+                <i class="fas fa-download"></i> Download Report
+            </a>
+            <a href="{{ url_for('reports.category', category=file.category) }}" 
+               class="btn btn-secondary">
+                <i class="fas fa-arrow-left"></i> Back to Category
+            </a>
+            <a href="{{ url_for('reports.index') }}" 
+               class="btn btn-secondary">
+                <i class="fas fa-list"></i> All Reports
+            </a>
+        </div>
+    </div>
+
+    <!-- Excel File Note -->
+    <div class="section">
+        <div class="alert alert-info">
+            <i class="fas fa-info-circle"></i>
+            <strong>Note:</strong> This is an Excel file (.xlsx). 
+            Download it to view the full report in Microsoft Excel, LibreOffice Calc, 
+            or your preferred spreadsheet application.
+        </div>
+    </div>
+</div>
+{% endblock %}
