@@ -398,6 +398,16 @@ ORDER BY PART_TRANSACTIONS DESC
     FETCH FIRST 10 ROWS ONLY;
 ```
 
+This query now acts as the summary layer for `run_top_part_transactions.py`. The workbook output is:
+
+- `Summary` sheet with the top work orders, part rollups, latest QA-derived technician, and latest inspection date
+- one sheet per work order with part number, part description, transaction detail, and work order context
+
+For this report, the person/date context comes from the latest `QA_RESULTS` row for each work order:
+
+- technician: `QA_RESULTS.QA_CREATED_BY -> FND_USER -> PER_ALL_PEOPLE_F`
+- latest work-order context date: max `QA_CREATION_DATE` per `WORK_ORDER_ID`
+
 ---
 
 ## Tier 3 — Complex Queries (CTEs, Aggregations, Multi-source)
@@ -617,8 +627,8 @@ ORDER BY
 
 ---
 
-### 21. Asset reliability summary — work order frequency + parts volume
-Ranks assets by total work orders and total parts consumed over the last 12 months:
+### 21. Asset maintenance burden summary — work order frequency + parts volume
+Ranks assets by maintenance activity over the last 12 months. This is not a true reliability metric; it is a workload/consumption proxy based on work order volume and issued parts:
 
 ```sql
 WITH ASSET_WO AS (
@@ -908,12 +918,12 @@ ORDER BY BR.RESOURCE_CODE, PEO.FULL_NAME;
 | 13 | Open DM work orders at step 10 | EAM_WORK_ORDERS_V + WIP_OPERATIONS_V + WIP_OP_RESOURCE_INSTANCES_V + MTL_PARAMETERS | Medium |
 | 14 | QA results with QA group | EAM_WORK_ORDERS_V + QA_RESULTS + QA_USER_GROUP_V | Medium |
 | 15 | Work orders completed by an employee | PER_ALL_PEOPLE_F + FND_USER + QA_RESULTS + EAM_WORK_ORDERS_V | Medium |
-| 16 | Work orders with most part transactions | EAM_WORK_ORDERS_V + MTL_MATERIAL_TRANSACTIONS | Medium |
+| 16 | Work orders with most part transactions | EAM_WORK_ORDERS_V + MTL_MATERIAL_TRANSACTIONS + QA_RESULTS + FND_USER + PER_ALL_PEOPLE_F | Medium |
 | 17 | Top 10 assets by work order volume | CTE + 6 tables | Complex |
 | 18 | Audit trail — quick | QA_RESULTS + WIP_ENTITIES + WIP_OPERATIONS | Complex |
 | 19 | Audit trail — full with date filter | QA_RESULTS + WIP_ENTITIES + WIP_OPERATIONS | Complex |
 | 20 | Work order full picture | 8 tables, all LEFT JOINs | Complex |
-| 21 | Asset reliability summary | CTE + EAM_WORK_ORDERS_V + MTL_MATERIAL_TRANSACTIONS | Complex |
+| 21 | Asset maintenance burden summary | CTE + EAM_WORK_ORDERS_V + MTL_MATERIAL_TRANSACTIONS | Complex |
 | 22 | Technician productivity summary | QA_RESULTS + EAM_WORK_ORDERS_V + FND_USER + PER_ALL_PEOPLE_F | Complex |
 | 23 | Parts consumption by asset | EAM_WORK_ORDERS_V + MTL_MATERIAL_TRANSACTIONS + MTL_SYSTEM_ITEMS_B | Complex |
 | 24 | QA results last 24 hours with technician and group | QA_RESULTS + EAM_WORK_ORDERS_V + QA_USER_GROUP_V | Medium |
