@@ -578,6 +578,8 @@ ORDER BY
 FETCH FIRST 10 ROWS ONLY;
 ```
 
+> `run_top_part_transactions.py` now uses this ranking as the workbook summary, then creates one detail sheet per returned work order. In that workbook, the technician/date context is derived from the latest QA record for each work order: `QA_RESULTS.QA_CREATED_BY -> FND_USER.USER_ID -> PER_ALL_PEOPLE_F.PERSON_ID`, ordered by the most recent `QA_CREATION_DATE`.
+
 Full part detail for a specific work order:
 
 ```sql
@@ -708,6 +710,8 @@ All scripts follow the same pattern: Python runner in `scripts/`, SQL template i
 | `run_top10_assets.py` | `top10_assets_wo_detail.sql` | `outputs/top10_assets/` | Top 10 assets by WO volume — last 12 months, with QA detail. One Excel sheet per asset. Args: `--org-code` |
 | *(ad hoc)* | — | — | QA user group membership for a single user: `SELECT fu.user_id, fu.user_name, qug.group_name, qug.status FROM apps.fnd_user fu JOIN apps.qa_user_group_v qug ON qug.user_id = fu.user_id WHERE fu.user_name = '10169062'` |
 | *(ad hoc)* | — | — | Find all QA groups matching a name pattern: `SELECT DISTINCT qug.group_name FROM apps.qa_user_group_v qug WHERE UPPER(qug.group_name) LIKE 'XAU PM%'` |
+
+| `run_top_part_transactions.py` | `top_part_transactions_summary.sql` + `top_part_transactions_detail.sql` | `outputs/top_part_transactions/` | Top work orders by part transactions. Produces one workbook with a `Summary` sheet plus one sheet per work order including part number, part description, transaction detail, and latest QA-derived technician/date context. Args: `--org-code`, `--days`, `--limit` |
 
 ### Running scripts
 
