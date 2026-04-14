@@ -86,6 +86,8 @@ class OracleDBConnector:
             cmd,
             input=self._build_sqlcl_stdin(sql_text),
             text=True,
+            encoding="utf-8",
+            errors="replace",
             capture_output=True,
         )
 
@@ -147,7 +149,9 @@ class OracleDBConnector:
             result = subprocess.run(
                 cmd,
                 capture_output=True,
-                text=True
+                text=True,
+                encoding="utf-8",
+                errors="replace",
             )
 
             if result.returncode == 0 and output_path.exists() and output_path.stat().st_size > 0:
@@ -207,6 +211,7 @@ class OracleDBConnector:
             "SET FEEDBACK OFF\n"
             "SET HEADING OFF\n"
             "SET ECHO OFF\n"
+            "SET LINESIZE 32767\n"
             "SET TRIMOUT ON\n"
             "SET TRIMSPOOL ON\n"
             f"{sql.rstrip(';')};\n"
