@@ -11,6 +11,8 @@
 | `QA_RESULTS` | APPS | Synonym → `QA` schema | **Quality inspection results.** Each row is a single inspection entry submitted against a work order, keyed to a collection plan. Stores lot, location, reason, adjustment, and free-text description in `CHARACTER1-4` and `COMMENT1`. |
 | `WIP_OPERATIONS_V` | APPS | View | **Work order operation steps.** Each work order can have multiple numbered operations (steps). Tracks whether each step is complete and which department owns it. `OPERATION_SEQ_NUM = 10` is the standard first/primary step in most EAM scripts here. |
 | `WIP_OP_RESOURCE_INSTANCES_V` | APPS | View | **Resource assignments per operation step.** Records which specific equipment or machine instance (`INSTANCE_NAME`) is assigned to a given operation on a work order. Joins via both `WIP_ENTITY_ID` and `OPERATION_SEQ_NUM`. |
+| `WIP_TRANSACTIONS` | WIP | Table | **Actual WIP resource transactions.** Transaction-level actual charged resource usage. For labor/time reporting, filter through `BOM_RESOURCES.UNIT_OF_MEASURE = 'HR'` and sum `TRANSACTION_QUANTITY`. |
+| `WIP_OPERATION_RESOURCES` | WIP | Table | **Operation resource setup and rollup.** Resource line setup for work order operations. Carries planned/default quantity in `USAGE_RATE_OR_AMOUNT` and applied rollup in `APPLIED_RESOURCE_UNITS`. |
 | `MTL_PARAMETERS` | APPS | Synonym → `INV` schema | **Inventory organization config.** One row per organization. Used here primarily to translate between numeric `ORGANIZATION_ID` (1169) and human-readable `ORGANIZATION_CODE` (`XAU`). Gateway for all org-scoped queries. |
 | `FND_USER` | APPS | Synonym → `APPLSYS` schema | **Application user accounts.** Every Oracle EBS login. Links numeric `USER_ID` (used in audit columns like `QA_CREATED_BY`) to a readable `USER_NAME` (typically the employee number) and to the HR person record via `EMPLOYEE_ID`. |
 | `PER_ALL_PEOPLE_F` | APPS | Synonym → `HR` schema | **HR person master (date-effective).** One row per effective period per person. Used to resolve a `USER_ID` to a `FULL_NAME` for display. Must always be filtered with `SYSDATE BETWEEN EFFECTIVE_START_DATE AND EFFECTIVE_END_DATE` to avoid duplicates. |
@@ -26,6 +28,8 @@
 | `BOM_DEPARTMENTS` | BOM | Table | **Department master.** Resolves the numeric `DEPARTMENT_ID` on `WIP_OPERATIONS` to a readable `DEPARTMENT_CODE` and description. Departments define which group owns or performs a work order operation. Join on both `DEPARTMENT_ID` and `ORGANIZATION_ID`. |
 | `BOM_RESOURCES` | BOM | Table | **Resource definitions.** One row per resource (person, machine, or equipment) per org. `RESOURCE_TYPE = 2` = Person. `RESOURCE_CODE` is the display name seen in the EAM Resources form. `DISABLE_DATE` IS NULL = active. |
 | `BOM_RESOURCE_EMPLOYEES` | BOM | Table | **Employee-to-resource assignments.** Junction table linking HR persons to BOM resources. Join via `PERSON_ID` directly to `PER_ALL_PEOPLE_F` — no `FND_USER` needed. `EFFECTIVE_END_DATE` controls when the assignment expires. |
+| `BOM_BILL_OF_MATERIALS` | APPS | View | **Configured BOM headers.** Official bill structure header for an asset group/item. Join from `EAM_WORK_ORDERS_V.ASSET_GROUP_ID` to `ASSEMBLY_ITEM_ID` and use `COMMON_BILL_SEQUENCE_ID` to find component rows. |
+| `BOM_INVENTORY_COMPONENTS` | APPS | View | **Configured BOM components.** Component lines for a bill. Join `BILL_SEQUENCE_ID` to `BOM_BILL_OF_MATERIALS.COMMON_BILL_SEQUENCE_ID`; component parts resolve through `COMPONENT_ITEM_ID -> MTL_SYSTEM_ITEMS_B.INVENTORY_ITEM_ID`. |
 | `MTL_MATERIAL_TRANSACTIONS` | INV | Table | **Inventory material transactions.** Every inventory movement — issues, receipts, returns. Filter `TRANSACTION_SOURCE_TYPE_ID = 5` for WIP-sourced transactions. Join to `EAM_WORK_ORDERS_V` via `TRANSACTION_SOURCE_ID = WIP_ENTITY_ID` to get parts charged to a work order. Negative qty = issued out, positive = returned. |
 | `MTL_SYSTEM_ITEMS_B` | INV | Table | **Item/part master.** One row per item per org. `SEGMENT1` is the part number. Join via `INVENTORY_ITEM_ID` and `ORGANIZATION_ID`. |
 | `MTL_TRANSACTION_TYPES` | INV | Table | **Transaction type lookup.** Resolves `TRANSACTION_TYPE_ID` to a human-readable name (e.g. `WIP Issue`, `WIP Return`, `WIP Scrap`). |
@@ -40,6 +44,10 @@
 | `BOM_RESOURCES` | BOM | Table | Resource definitions (people, machines, equipment) — discovered via EAM Resources form. `RESOURCE_TYPE = 2` = Person |
 | `BOM_RESOURCE_EMPLOYEES` | BOM | Table | `PER_ALL_PEOPLE_F.PERSON_ID` → `BOM_RESOURCE_EMPLOYEES.PERSON_ID` — links employees directly to resources, no FND_USER needed |
 | `BOM_DEPARTMENTS` | BOM | Table | `WIP_OPERATIONS.DEPARTMENT_ID` → `BOM_DEPARTMENTS.DEPARTMENT_ID` — resolves department ID to readable code and description |
+| `WIP_TRANSACTIONS` | WIP | Table | `EAM_WORK_ORDERS_V.WIP_ENTITY_ID` → `WIP_TRANSACTIONS.WIP_ENTITY_ID` — actual charged time/resource transaction detail |
+| `WIP_OPERATION_RESOURCES` | WIP | Table | `WIP_TRANSACTIONS.WIP_ENTITY_ID + OPERATION_SEQ_NUM + RESOURCE_SEQ_NUM` → `WIP_OPERATION_RESOURCES` — operation resource plan/applied rollup |
+| `BOM_BILL_OF_MATERIALS` | APPS | View | `EAM_WORK_ORDERS_V.ASSET_GROUP_ID` → `BOM_BILL_OF_MATERIALS.ASSEMBLY_ITEM_ID` — configured BOM header for the asset group |
+| `BOM_INVENTORY_COMPONENTS` | APPS | View | `BOM_BILL_OF_MATERIALS.COMMON_BILL_SEQUENCE_ID` → `BOM_INVENTORY_COMPONENTS.BILL_SEQUENCE_ID` — configured component rows |
 | `MTL_MATERIAL_TRANSACTIONS` | INV | Table | `EAM_WORK_ORDERS_V.WIP_ENTITY_ID` → `MTL_MATERIAL_TRANSACTIONS.TRANSACTION_SOURCE_ID` (filter: `TRANSACTION_SOURCE_TYPE_ID = 5`) — all parts issued/returned against a work order |
 | `MTL_SYSTEM_ITEMS_B` | INV | Table | `MTL_MATERIAL_TRANSACTIONS.INVENTORY_ITEM_ID` → `MTL_SYSTEM_ITEMS_B.INVENTORY_ITEM_ID` — part number and description |
 | `MTL_TRANSACTION_TYPES` | INV | Table | `MTL_MATERIAL_TRANSACTIONS.TRANSACTION_TYPE_ID` → `MTL_TRANSACTION_TYPES.TRANSACTION_TYPE_ID` — human-readable transaction type name |
@@ -57,7 +65,7 @@
 
 | Column | Notes |
 |--------|-------|
-| `WIP_ENTITY_ID` | PK — joined from QA_RESULTS, WIP_OPERATIONS_V, WIP_OP_RESOURCE_INSTANCES_V |
+| `WIP_ENTITY_ID` | PK — joined from QA_RESULTS, WIP_OPERATIONS_V, WIP_OP_RESOURCE_INSTANCES_V, WIP_TRANSACTIONS, WIP_OPERATION_RESOURCES |
 | `WIP_ENTITY_NAME` | Work order number (e.g. `AU%`, `PM%`) |
 | `ORGANIZATION_ID` | FK → MTL_PARAMETERS |
 | `WORK_ORDER_STATUS` | e.g. `Released`, `Cancelled` |
@@ -66,7 +74,7 @@
 | `ASSET_NUMBER` | Equipment identifier (e.g. `AU%`) |
 | `ASSET_ACTIVITY` | PM activity code |
 | `ASSET_DESCRIPTION` | Asset description text |
-| `ASSET_GROUP_ID` | Asset classification group |
+| `ASSET_GROUP_ID` | Asset group item ID. Confirmed join to `MTL_SYSTEM_ITEMS_B.INVENTORY_ITEM_ID` and `BOM_BILL_OF_MATERIALS.ASSEMBLY_ITEM_ID` for configured BOM lookup |
 | `CLASS_CODE` | Work order class |
 | `DESCRIPTION` | Work order description |
 | `CREATION_DATE` | Work order creation timestamp |
@@ -103,6 +111,8 @@
 **Purpose:** Each work order is broken into one or more numbered operation steps. This view exposes those steps — which department is responsible, whether the step is complete, and what sequence number it is. In all current EAM scripts here, only sequence 10 (the first/primary step) is used. Some queries alias this view twice (`WO1`, `WO2`) to simultaneously check two different operation sequences on the same work order.
 **Join to EAM_WORK_ORDERS_V:** `WO.WIP_ENTITY_ID = EWO.WIP_ENTITY_ID`
 **Join to WIP_OP_RESOURCE_INSTANCES_V:** `WO.WIP_ENTITY_ID + WO.OPERATION_SEQ_NUM`
+**Join to WIP_TRANSACTIONS:** `WO.WIP_ENTITY_ID + WO.ORGANIZATION_ID + WO.OPERATION_SEQ_NUM`
+**Join to WIP_OPERATION_RESOURCES:** `WO.WIP_ENTITY_ID + WO.ORGANIZATION_ID + WO.OPERATION_SEQ_NUM`
 
 | Column | Notes |
 |--------|-------|
@@ -111,6 +121,7 @@
 | `OPERATION_SEQ_NUM` | Step number (filter: `= 10`) |
 | `OPERATION_COMPLETED` | `Y` / `N` flag |
 | `DEPARTMENT_CODE` | Dept responsible for the operation |
+| `DEPARTMENT_ID` | FK → BOM_DEPARTMENTS.DEPARTMENT_ID |
 
 > **Note:** Some queries alias this view twice (`WO1`, `WO2`) to check multiple operation seq numbers independently on the same work order.
 
@@ -125,6 +136,46 @@
 | `WIP_ENTITY_ID` | FK → EAM_WORK_ORDERS_V |
 | `OPERATION_SEQ_NUM` | FK → WIP_OPERATIONS_V |
 | `INSTANCE_NAME` | Resource/equipment instance name |
+
+> This view shows assignment only. For actual time charged to a work order resource, use `WIP.WIP_TRANSACTIONS.TRANSACTION_QUANTITY` at the transaction level and `WIP.WIP_OPERATION_RESOURCES.APPLIED_RESOURCE_UNITS` at the operation rollup level. `WIP.WIP_OPERATION_RESOURCES.USAGE_RATE_OR_AMOUNT` is the planned/default quantity and often differs from charged time.
+
+---
+
+### WIP.WIP_TRANSACTIONS
+**Purpose:** Transaction-level WIP activity, including actual charged resource time.
+**APPS synonym:** `APPS.WIP_TRANSACTIONS`
+
+| Column | Notes |
+|--------|-------|
+| `WIP_ENTITY_ID` | FK → EAM_WORK_ORDERS_V |
+| `OPERATION_SEQ_NUM` | Operation step receiving the transaction |
+| `RESOURCE_SEQ_NUM` | Resource line within the operation |
+| `RESOURCE_ID` | FK → BOM_RESOURCES |
+| `ORGANIZATION_ID` | FK → MTL_PARAMETERS / EAM_WORK_ORDERS_V |
+| `TRANSACTION_QUANTITY` | Actual charged quantity; when the resource UOM is `HR`, this is charged hours |
+| `PRIMARY_QUANTITY` | Same quantity in primary UOM |
+| `USAGE_RATE_OR_AMOUNT` | Planned/default quantity copied from the resource setup |
+
+> **Time-charged pattern:** Join `WIP_TRANSACTIONS` to `BOM_RESOURCES` on `RESOURCE_ID + ORGANIZATION_ID`, filter `BR.UNIT_OF_MEASURE = 'HR'`, then sum `WT.TRANSACTION_QUANTITY`. This is the transaction-level source for actual time in `run_work_order_time_charged.py`, `run_top_assets_by_time_charged.py`, and the asset maintenance burden report.
+
+---
+
+### WIP.WIP_OPERATION_RESOURCES
+**Purpose:** Operation-level resource setup and actual-usage rollup for a work order.
+**APPS synonym:** `APPS.WIP_OPERATION_RESOURCES`
+
+| Column | Notes |
+|--------|-------|
+| `WIP_ENTITY_ID` | FK → work order |
+| `OPERATION_SEQ_NUM` | Operation step |
+| `RESOURCE_SEQ_NUM` | Resource line within the operation |
+| `RESOURCE_ID` | FK → BOM_RESOURCES |
+| `ORGANIZATION_ID` | FK → MTL_PARAMETERS / EAM_WORK_ORDERS_V |
+| `USAGE_RATE_OR_AMOUNT` | Planned/default quantity for the resource on the operation |
+| `APPLIED_RESOURCE_UNITS` | Rolled-up actual applied quantity; for `HR` resources this is applied hours |
+| `APPLIED_RESOURCE_VALUE` | Applied value/cost rollup |
+
+> **Plan vs actual:** `USAGE_RATE_OR_AMOUNT` is planned/default resource quantity, `APPLIED_RESOURCE_UNITS` is the operation-level applied rollup, and `WIP_TRANSACTIONS.TRANSACTION_QUANTITY` is the transaction-level actual detail.
 
 ---
 
@@ -393,6 +444,46 @@ Used in `pm_released_work_orders.sql` with no explicit join condition (Cartesian
 
 > **Shorter join path for employee lookups:** When querying resource assignments, join `PER_ALL_PEOPLE_F` directly to `BOM_RESOURCE_EMPLOYEES` via `PERSON_ID` — you do not need `FND_USER` in the middle.
 
+---
+
+### APPS.BOM_BILL_OF_MATERIALS
+**Purpose:** Official configured BOM header for an asset group/item. In this EAM instance, direct `BOM.*` access is not available for these objects; use the `APPS.BOM_BILL_OF_MATERIALS` view.
+**Join from asset:** `BBOM.ASSEMBLY_ITEM_ID = EWO.ASSET_GROUP_ID` AND `BBOM.ORGANIZATION_ID = EWO.ORGANIZATION_ID`
+**Join to components:** `BIC.BILL_SEQUENCE_ID = BBOM.COMMON_BILL_SEQUENCE_ID`
+
+| Column | Notes |
+|--------|-------|
+| `ASSEMBLY_ITEM_ID` | Asset group item ID; joins to `EAM_WORK_ORDERS_V.ASSET_GROUP_ID` |
+| `ORGANIZATION_ID` | Org scope; join to work order org |
+| `BILL_SEQUENCE_ID` | Bill header sequence ID |
+| `COMMON_BILL_SEQUENCE_ID` | Common bill sequence used to retrieve component lines |
+| `ALTERNATE_BOM_DESIGNATOR` | Alternate BOM code, blank for primary bill |
+| `ASSEMBLY_TYPE` | Bill type code |
+| `EFFECTIVITY_CONTROL` | Effectivity control mode |
+
+> Discovery run `outputs/configured_asset_bom_discovery/join_probes_20260413_044215.csv` confirmed `EAM_WORK_ORDERS_V.ASSET_GROUP_ID -> BOM_BILL_OF_MATERIALS.ASSEMBLY_ITEM_ID` returns rows for org 1169.
+
+---
+
+### APPS.BOM_INVENTORY_COMPONENTS
+**Purpose:** Official configured BOM component lines. One row per component position/sequence on a bill.
+**Join to BOM header:** `BIC.BILL_SEQUENCE_ID = BBOM.COMMON_BILL_SEQUENCE_ID`
+**Join to part master:** `COMP.INVENTORY_ITEM_ID = BIC.COMPONENT_ITEM_ID` AND `COMP.ORGANIZATION_ID = asset org`
+
+| Column | Notes |
+|--------|-------|
+| `BILL_SEQUENCE_ID` | FK-style join to `BOM_BILL_OF_MATERIALS.COMMON_BILL_SEQUENCE_ID` |
+| `COMPONENT_ITEM_ID` | Component part item ID; joins to `MTL_SYSTEM_ITEMS_B.INVENTORY_ITEM_ID` |
+| `ITEM_NUM` | Component line/order number |
+| `COMPONENT_SEQUENCE_ID` | Unique component line sequence |
+| `COMPONENT_QUANTITY` | Configured quantity per asset group BOM |
+| `COMPONENT_YIELD_FACTOR` | Yield factor for the component |
+| `COMPONENT_REMARKS` | Component remarks text |
+| `EFFECTIVITY_DATE` | Component effective start date |
+| `DISABLE_DATE` | Component inactive date; null means no known disable date |
+
+> Active configured component filter: `BIC.EFFECTIVITY_DATE <= SYSDATE AND (BIC.DISABLE_DATE IS NULL OR BIC.DISABLE_DATE > SYSDATE)`.
+
 ```
 EAM_WORK_ORDERS_V  (hub)
 │
@@ -417,6 +508,22 @@ EAM_WORK_ORDERS_V  (hub)
 │         │     ON RES.WIP_ENTITY_ID      = EWO.WIP_ENTITY_ID
 │         │    AND RES.OPERATION_SEQ_NUM  = WO.OPERATION_SEQ_NUM
 │         │
+│         ├── WIP_TRANSACTIONS
+│         │     ON WT.WIP_ENTITY_ID       = WO.WIP_ENTITY_ID
+│         │    AND WT.ORGANIZATION_ID     = WO.ORGANIZATION_ID
+│         │    AND WT.OPERATION_SEQ_NUM   = WO.OPERATION_SEQ_NUM
+│         │          │
+│         │          ├── BOM_RESOURCES
+│         │          │     ON BR.RESOURCE_ID     = WT.RESOURCE_ID
+│         │          │    AND BR.ORGANIZATION_ID = WT.ORGANIZATION_ID
+│         │          │    (filter: BR.UNIT_OF_MEASURE = 'HR' for charged time)
+│         │          │
+│         │          └── WIP_OPERATION_RESOURCES
+│         │                ON WOR.WIP_ENTITY_ID     = WT.WIP_ENTITY_ID
+│         │               AND WOR.ORGANIZATION_ID   = WT.ORGANIZATION_ID
+│         │               AND WOR.OPERATION_SEQ_NUM = WT.OPERATION_SEQ_NUM
+│         │               AND WOR.RESOURCE_SEQ_NUM  = WT.RESOURCE_SEQ_NUM
+│         │
 │         └── BOM_DEPARTMENTS
 │               ON BD.DEPARTMENT_ID    = WO.DEPARTMENT_ID
 │              AND BD.ORGANIZATION_ID  = WO.ORGANIZATION_ID
@@ -438,6 +545,24 @@ EAM_WORK_ORDERS_V  (parts charged)
           │
           └── MTL_TRANSACTION_TYPES
                 ON MTT.TRANSACTION_TYPE_ID = MMT.TRANSACTION_TYPE_ID
+
+
+EAM_WORK_ORDERS_V  (official configured BOM)
+│
+├── MTL_SYSTEM_ITEMS_B  (asset group item)
+│     ON AG.INVENTORY_ITEM_ID = EWO.ASSET_GROUP_ID
+│    AND AG.ORGANIZATION_ID   = EWO.ORGANIZATION_ID
+│
+└── BOM_BILL_OF_MATERIALS
+      ON BBOM.ASSEMBLY_ITEM_ID = EWO.ASSET_GROUP_ID
+     AND BBOM.ORGANIZATION_ID  = EWO.ORGANIZATION_ID
+          │
+          └── BOM_INVENTORY_COMPONENTS
+                ON BIC.BILL_SEQUENCE_ID = BBOM.COMMON_BILL_SEQUENCE_ID
+                     │
+                     └── MTL_SYSTEM_ITEMS_B  (component part)
+                           ON COMP.INVENTORY_ITEM_ID = BIC.COMPONENT_ITEM_ID
+                          AND COMP.ORGANIZATION_ID   = EWO.ORGANIZATION_ID
 
 
 FND_USER  (security hub — standalone from work order queries)
@@ -504,6 +629,9 @@ FND_USER  (security hub — standalone from work order queries)
 | `BOM_RESOURCES.RESOURCE_TYPE` | `2` | Person-type resources only (1=Machine, 3=Space) |
 | `BOM_RESOURCES.DISABLE_DATE` | `IS NULL` | Active resources only |
 | `BOM_RESOURCE_EMPLOYEES.EFFECTIVE_END_DATE` | `>= SYSDATE` | Active employee-resource assignments only |
+| `BOM_RESOURCES.UNIT_OF_MEASURE` | `'HR'` | Hour-based resources for actual time-charged reports |
+| `BOM_INVENTORY_COMPONENTS.EFFECTIVITY_DATE` | `<= SYSDATE` | Component is effective as of today |
+| `BOM_INVENTORY_COMPONENTS.DISABLE_DATE` | `IS NULL OR > SYSDATE` | Component is not disabled; use with effectivity date for active configured BOM |
 | `QA_USER_GROUP_V.STATUS` | `'A'` | Active group memberships only |
 | `QA_USER_GROUP_V.GROUP_NAME LIKE` | `'XAU PM%'` | Filter QA groups by org/type prefix pattern |
 
@@ -561,7 +689,9 @@ Find work orders with the most part transactions in the last 30 days:
 SELECT DISTINCT
     EWO.WIP_ENTITY_NAME,
     EWO.ASSET_NUMBER,
-    COUNT(MMT.TRANSACTION_ID) AS PART_TRANSACTIONS
+    COUNT(MMT.TRANSACTION_ID) AS PART_TRANSACTIONS,
+    SUM(ABS(MMT.TRANSACTION_QUANTITY)
+        * NVL(MMT.TRANSACTION_COST, MMT.ACTUAL_COST)) AS TOTAL_MATERIAL_COST
 FROM APPS.EAM_WORK_ORDERS_V EWO
 JOIN INV.MTL_MATERIAL_TRANSACTIONS MMT
     ON  MMT.TRANSACTION_SOURCE_ID      = EWO.WIP_ENTITY_ID
@@ -574,11 +704,13 @@ GROUP BY
     EWO.WIP_ENTITY_NAME,
     EWO.ASSET_NUMBER
 ORDER BY
-    PART_TRANSACTIONS DESC
+    PART_TRANSACTIONS DESC,
+    TOTAL_MATERIAL_COST DESC
 FETCH FIRST 10 ROWS ONLY;
 ```
 
 > `run_top_part_transactions.py` now uses this ranking as the workbook summary, then creates one detail sheet per returned work order. In that workbook, the technician/date context is derived from the latest QA record for each work order: `QA_RESULTS.QA_CREATED_BY -> FND_USER.USER_ID -> PER_ALL_PEOPLE_F.PERSON_ID`, ordered by the most recent `QA_CREATION_DATE`.
+> Material cost in these part-usage queries is derived as `ABS(TRANSACTION_QUANTITY) * NVL(TRANSACTION_COST, ACTUAL_COST)`.
 
 Full part detail for a specific work order:
 
@@ -594,6 +726,9 @@ SELECT
     MSI.SEGMENT1                                AS PART_NUMBER,
     MSI.DESCRIPTION                             AS PART_DESCRIPTION,
     MMT.TRANSACTION_QUANTITY                    AS QTY,
+    NVL(MMT.TRANSACTION_COST, MMT.ACTUAL_COST)  AS UNIT_MATERIAL_COST,
+    ABS(MMT.TRANSACTION_QUANTITY)
+      * NVL(MMT.TRANSACTION_COST, MMT.ACTUAL_COST) AS LINE_MATERIAL_COST,
     MMT.TRANSACTION_UOM                         AS UOM,
     MMT.SUBINVENTORY_CODE                       AS FROM_SUBINVENTORY,
     MMT.TRANSACTION_REFERENCE                   AS REFERENCE
@@ -702,22 +837,50 @@ All scripts follow the same pattern: Python runner in `scripts/`, SQL template i
 | Script | SQL File | Output Dir | Description |
 |--------|----------|------------|-------------|
 | `run_cancelled_wo_report.py` | `cancelled_work_orders_15_days.sql` | `outputs/cancelled_work_orders/` | Cancelled work orders in the last 15 days |
-| `run_level10_dm_open.py` | `level10_dm_open.sql` | `outputs/level10_dm/` | Open DM work orders at operation seq 10 |
+| `run_level10_dm_report.py` | `level10_dm_open.sql` | `outputs/level10_dm/` | Open DM work orders at operation seq 10 |
 | `run_pm_released_wo_report.py` | `pm_released_work_orders.sql` | `outputs/pm_released_work_orders/` | Released PM work orders — ⚠ Cartesian risk with EAM_PM_SCHEDULING_RULES |
-| `run_qa_daily_results.py` | `qa_daily_results_24_hours.sql` | `outputs/qa_daily_results/` | QA results in the last 24 hours |
+| `run_qa_report_12hr.py` | `qa_results_last_12_hours.sql` | `outputs/qa_results_12/` | QA results in the last 12 hours for AU work orders at operation sequence 10 |
+| `run_qa_daily_report.py` | `qa_daily_results_24_hours.sql` | `outputs/qa_daily_results/` | QA results in the last 24 hours |
+| `run_qa_monthly_report.py` | `qa_results_last_31_days.sql` | `outputs/qa_monthly_results/` | QA results in the last 31 days for AU work orders at operation sequence 10 |
 | `run_eam_verication.py` | `verify_eam_relationships.sql` | `outputs/eam_verification/` | Verifies all table relationships and filter values |
+| `run_verify_org_mapping.py` | `verify_org_mapping.sql` | `outputs/verify_org_mapping/` | Verify organization code and organization ID mapping. Args: `--org-code` |
+| `run_lookup_user.py` | `lookup_user.sql` | `outputs/lookup_user/` | Look up a user by user name, user ID, or employee ID. Args: `--identifier` |
+| `run_users_by_eam_responsibility.py` | `users_by_responsibility.sql` | `outputs/users_by_responsibility/` | Find active users with an EAM responsibility. Args: `--responsibility-name`, `--app-short-name` |
+| `run_user_responsibilities.py` | `user_responsibilities.sql` | `outputs/user_responsibilities/` | Find all responsibilities assigned to a user. Args: `--identifier` |
+| `run_qa_groups_for_user.py` | `qa_groups_for_user.sql` | `outputs/qa_groups_for_user/` | Find QA groups for a user. Args: `--identifier` |
+| `run_qa_group_members.py` | `qa_group_members.sql` | `outputs/qa_group_members/` | Find active members of a QA group. Args: `--group-name` |
+| `run_released_work_orders_for_asset.py` | `released_work_orders_for_asset.sql` | `outputs/released_work_orders_for_asset/` | Released work orders for an asset. Args: `--org-code`, `--asset-number` |
+| `run_qa_results_for_work_order.py` | `qa_results_for_work_order.sql` | `outputs/qa_results_for_work_order/` | QA results for a work order with technician name. Args: `--org-code`, `--work-order` |
+| `run_qa_results_with_group.py` | `qa_results_with_group.sql` | `outputs/qa_results_with_group/` | QA results enriched with QA group membership. Args: `--org-code`, `--days` |
+| `run_parts_charged_to_work_order.py` | `parts_charged_to_work_order.sql` | `outputs/parts_charged_to_work_order/` | Parts charged to a work order with material cost. Args: `--org-code`, `--work-order` |
+| `run_resources_for_employee.py` | `resources_for_employee.sql` | `outputs/resources_for_employee/` | Resources assigned to an employee. Args: `--org-code`, `--name` |
+| `run_work_order_operations.py` | `work_order_operations.sql` | `outputs/work_order_operations/` | Work order operations with department details. Args: `--org-code`, `--work-order` |
+| `run_asset_maintenance_burden_summary.py` | `asset_maintenance_burden_summary.sql` + `asset_maintenance_burden_detail.sql` | `outputs/asset_maintenance_burden_summary/` | Asset workload summary plus one detail sheet per selected asset. Combines work order volume, issued parts/material cost, latest QA context, operation 10 department, and actual charged time. Args: `--org-code`, `--months`, `--limit` |
 | `run_person_wo_history.py` | `person_work_order_history.sql` | `outputs/person_work_order_history/` | All work orders completed by a named employee. Args: `--name`, `--days` |
-| `run_top10_assets.py` | `top10_assets_wo_detail.sql` | `outputs/top10_assets/` | Top 10 assets by WO volume — last 12 months, with QA detail. One Excel sheet per asset. Args: `--org-code` |
+| `run_person_parts_history.py` | `person_parts_history.sql` | `outputs/person_parts_history/` | Parts charged to work orders touched by a named employee. Uses QA activity to define touched work orders, then lists issued parts and material cost. Args: `--org-code`, `--name`, `--days` |
+| `run_audit_trail_quick.py` | `audit_trail_quick.sql` | `outputs/audit_trail_quick/` | Quick audit trail for one Oracle `USER_ID`. Args: `--user-id` |
+| `run_audit_trail_full.py` | `audit_trail_full.sql` | `outputs/audit_trail_full/` | Full audit trail for one Oracle `USER_ID` with a start date filter. Args: `--user-id`, `--date-from` |
+| `run_work_order_full_picture.py` | `work_order_full_picture.sql` | `outputs/work_order_full_picture/` | Full work order picture with operations, QA, and parts. Args: `--org-code`, `--work-order` |
+| `run_technician_productivity_summary.py` | `technician_productivity_summary.sql` | `outputs/technician_productivity_summary/` | Technician productivity summary. Args: `--org-code`, `--months`, `--limit` |
+| `run_parts_consumption_by_asset.py` | `parts_consumption_by_asset.sql` | `outputs/parts_consumption_by_asset/` | Parts consumption by asset. Args: `--org-code`, `--asset-number`, `--months` |
+| `run_configured_bom_for_asset.py` | `configured_bom_for_asset.sql` | `outputs/configured_bom_for_asset/` | Official configured BOM for an asset from APPS BOM views. Args: `--org-code`, `--asset-number`, `--active-only` |
+| `run_employees_for_resource.py` | `employees_for_resource.sql` | `outputs/employees_for_resource/` | Employees assigned to a resource. Args: `--org-code`, `--resource-code` |
+| `run_work_orders_for_department.py` | `work_orders_for_department.sql` | `outputs/work_orders_for_department/` | Work orders for a department. Args: `--org-code`, `--department-code`, `--days` |
+| `run_resource_roster.py` | `resource_roster.sql` | `outputs/resource_roster/` | Full active person-resource roster. Args: `--org-code` |
+| `run_top_10_assets.py` | `top10_assets_wo_detail.sql` | `outputs/top10_assets/` | Top 10 assets by WO volume — last 12 months, with QA detail. One Excel sheet per asset. Args: `--org-code` |
+| `run_top_part_transactions.py` | `top_part_transactions_summary.sql` + `top_part_transactions_detail.sql` | `outputs/top_part_transactions/` | Top work orders by part transactions. Produces one workbook with a `Summary` sheet plus one sheet per work order including part number, part description, transaction detail, and latest QA-derived technician/date context. Args: `--org-code`, `--days`, `--limit` |
+| `run_top_assets_by_time_charged.py` | `top_assets_by_time_charged.sql` | `outputs/top_assets_by_time_charged/` | Top assets by actual charged time. Uses `WIP_TRANSACTIONS.TRANSACTION_QUANTITY` filtered to hour-based resources. Args: `--org-code`, `--months`, `--limit` |
+| `run_work_order_time_charged.py` | `work_order_time_charged.sql` | `outputs/work_order_time_charged/` | Actual time charged to a work order by operation, department, and resource. Uses `WIP_TRANSACTIONS.TRANSACTION_QUANTITY` for charged time and shows planned vs applied quantities alongside it. Args: `--org-code`, `--work-order`, `--operation-seq` |
+| `run_all_reports.py` | multiple | `outputs/combined_reports/` | Batch runner that copies the latest QA daily, QA 12-hour, and level 10 DM workbooks into a combined reports folder |
+| `discover_configured_asset_bom.py` | metadata probes | `outputs/configured_asset_bom_discovery/` | Discovery utility for configured asset BOM metadata, join probes, and sample configured BOM output |
 | *(ad hoc)* | — | — | QA user group membership for a single user: `SELECT fu.user_id, fu.user_name, qug.group_name, qug.status FROM apps.fnd_user fu JOIN apps.qa_user_group_v qug ON qug.user_id = fu.user_id WHERE fu.user_name = '10169062'` |
 | *(ad hoc)* | — | — | Find all QA groups matching a name pattern: `SELECT DISTINCT qug.group_name FROM apps.qa_user_group_v qug WHERE UPPER(qug.group_name) LIKE 'XAU PM%'` |
-
-| `run_top_part_transactions.py` | `top_part_transactions_summary.sql` + `top_part_transactions_detail.sql` | `outputs/top_part_transactions/` | Top work orders by part transactions. Produces one workbook with a `Summary` sheet plus one sheet per work order including part number, part description, transaction detail, and latest QA-derived technician/date context. Args: `--org-code`, `--days`, `--limit` |
 
 ### Running scripts
 
 ```powershell
 # From the project root
-python scripts\run_top10_assets.py --org-code XAU
+python scripts\run_top_10_assets.py --org-code XAU
 python scripts\run_person_wo_history.py --name "Smith" --days 90
 python scripts\run_eam_verication.py
 ```
