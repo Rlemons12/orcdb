@@ -24,15 +24,15 @@ def index():
 
 @bp.route('/dashboard')
 def dashboard():
-    """Detailed dashboard view"""
+    """Dashboard alias kept for bookmarks and navigation links."""
     output_dir = current_app.config['OUTPUT_BASE_DIR']
-    
+
+    recent_reports = get_recent_reports(output_dir, limit=10)
     stats = get_report_statistics(output_dir)
-    recent_by_type = get_reports_by_type(output_dir)
-    
-    return render_template('dashboard.html',
-                         stats=stats,
-                         reports_by_type=recent_by_type)
+
+    return render_template('index.html',
+                         recent_reports=recent_reports,
+                         stats=stats)
 
 
 def get_recent_reports(base_dir: Path, limit: int = 10):

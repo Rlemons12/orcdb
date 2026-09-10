@@ -4,7 +4,9 @@ import subprocess
 import threading
 import time
 import sys
+import os
 from datetime import datetime
+from app.services.report_catalog import build_script_arguments, get_report, get_report_catalog
 
 # api_routes.py
 bp = Blueprint('api_routes', __name__, url_prefix='/api')
@@ -19,32 +21,7 @@ job_history = []
 def available_reports():
     """Get list of available report types"""
     project_root = current_app.config['PROJECT_ROOT']
-
-    reports = [
-        {
-            'id': 'qa_daily',
-            'name': 'QA Daily Results',
-            'description': 'QA results for the last 24 hours',
-            'script': 'run_qa_daily_report.py',
-            'category': 'qa_daily_results'
-        },
-        {
-            'id': 'level10_dm',
-            'name': 'Level 10 DM Open Work Orders',
-            'description': 'Open work orders for Level 10 DM',
-            'script': 'run_level10_dm_report.py',
-            'category': 'level10_dm_open'
-        },
-        {
-            'id': 'pm_released_wo',
-            'name': 'PM Released Work Orders',
-            'description': 'Released preventive maintenance work orders',
-            'script': 'run_pm_released_wo_report.py',
-            'category': 'pm_released_work_orders'
-        },
-    ]
-
-    return jsonify(reports)
+    return jsonify(get_report_catalog(project_root))
 
 
 @bp.route('/reports/run', methods=['POST'])
@@ -58,32 +35,21 @@ def run_report():
         report_id = data.get('report_id')
         email_to = data.get('email_to')
         email_cc = data.get('email_cc')
+        argument_values = data.get('arguments') or {}
+        if not isinstance(argument_values, dict):
+            return jsonify({'error': 'arguments must be a JSON object'}), 400
 
         if not report_id:
             return jsonify({'error': 'report_id is required'}), 400
 
-        # Report configuration
-        reports = {
-            'qa_daily': {
-                'script': 'run_qa_daily_report.py',
-                'name': 'QA Daily Results'
-            },
-            'level10_dm': {
-                'script': 'run_level10_dm_report.py',
-                'name': 'Level 10 DM Open Work Orders'
-            },
-            'pm_released_wo': {
-                'script': 'run_pm_released_wo_report.py',
-                'name': 'PM Released Work Orders'
-            }
-        }
-
-        if report_id not in reports:
-            return jsonify({'error': 'Invalid report_id'}), 400
-
-        report_config = reports[report_id]
-
         project_root = current_app.config['PROJECT_ROOT']
+        report_config = get_report(project_root, report_id)
+        if not report_config:
+            return jsonify({'error': 'Invalid report_id'}), 400
+        try:
+            script_arguments = build_script_arguments(report_config, argument_values)
+        except ValueError as exc:
+            return jsonify({'error': str(exc)}), 400
         script_path = project_root / "scripts" / report_config['script']
 
         if not script_path.exists():
@@ -94,7 +60,7 @@ def run_report():
             }), 404
 
         # Create job ID
-        job_id = f"{report_id}_{int(time.time())}"
+        job_id = f"{report_id}_{time.time_ns()}"
 
         # Initialize job tracking
         active_jobs[job_id] = {
@@ -105,7 +71,8 @@ def run_report():
             'started_at': datetime.now().isoformat(),
             'progress': 0,
             'email_to': email_to,
-            'email_cc': email_cc
+            'email_cc': email_cc,
+            'arguments': argument_values,
         }
 
         # 🔑 Capture the Flask app object explicitly
@@ -114,7 +81,7 @@ def run_report():
         # Run in background thread WITH app context
         thread = threading.Thread(
             target=execute_report_script,
-            args=(app, job_id, script_path, project_root, email_to, email_cc),
+            args=(app, job_id, script_path, project_root, script_arguments, email_to, email_cc),
             daemon=True
         )
         thread.start()
@@ -167,6 +134,7 @@ def execute_report_script(
     job_id: str,
     script_path: Path,
     project_root: Path,
+    script_arguments: list[str],
     email_to=None,
     email_cc=None
 ):
@@ -177,10 +145,14 @@ def execute_report_script(
     import sys
     import subprocess
     import time
-    import pythoncom
     from datetime import datetime
-
-    pythoncom.CoInitialize()
+    pythoncom = None
+    try:
+        import pythoncom as _pythoncom
+        pythoncom = _pythoncom
+        pythoncom.CoInitialize()
+    except ImportError:
+        pass
 
     try:
         with app.app_context():
@@ -201,10 +173,16 @@ def execute_report_script(
             # -----------------------------
             # Run the report script
             # -----------------------------
-            module_name = f"scripts.{script_path.stem}"
+            before_files = snapshot_report_files(project_root / "outputs")
+            environment = os.environ.copy()
+            existing_pythonpath = environment.get("PYTHONPATH")
+            environment["PYTHONPATH"] = str(project_root) + (
+                os.pathsep + existing_pythonpath if existing_pythonpath else ""
+            )
             result = subprocess.run(
-            [sys.executable, "-m", module_name],
+                [sys.executable, str(script_path), *script_arguments],
                 cwd=str(project_root),
+                env=environment,
                 capture_output=True,
                 text=True,
                 timeout=300
@@ -241,9 +219,8 @@ def execute_report_script(
             # -----------------------------
             # Discover generated files (deterministic)
             # -----------------------------
-            generated_files = find_latest_report_files(
-                project_root,
-                active_jobs[job_id]['report_id']
+            generated_files = find_generated_report_files(
+                project_root / "outputs", before_files
             )
 
             active_jobs[job_id]['generated_files'] = [
@@ -319,7 +296,8 @@ def execute_report_script(
             app.logger.exception("Unhandled error during report execution")
 
     finally:
-        pythoncom.CoUninitialize()
+        if pythoncom:
+            pythoncom.CoUninitialize()
 
         # -----------------------------
         # Move job to history after delay
@@ -339,54 +317,27 @@ def execute_report_script(
 
 
 
-def find_latest_report_files(
-    project_root: Path,
-    report_id: str,
-    *,
-    limit: int = 1
-):
-    """
-    Find the most recently generated report files for a report type.
-
-    This version is deterministic:
-      - Does NOT rely on timestamps being within a window
-      - Works even if files are overwritten or copied
-      - Always returns the newest Excel files by mtime
-
-    Returns:
-        List[Path] (newest first)
-    """
-    output_dir = project_root / "outputs"
-
-    category_map = {
-        'qa_daily': 'qa_daily_results',
-        'level10_dm': 'level10_dm_open',
-        'pm_released_wo': 'pm_released_work_orders'
-    }
-
-    category = category_map.get(report_id)
-    if not category:
-        return []
-
-    category_dir = output_dir / category
-    if not category_dir.exists() or not category_dir.is_dir():
-        return []
-
-    # Collect all Excel files
-    files = []
-    for file_path in category_dir.glob("*.xlsx"):
+def snapshot_report_files(output_dir: Path) -> dict[Path, tuple[int, int]]:
+    snapshot = {}
+    if not output_dir.exists():
+        return snapshot
+    for path in output_dir.rglob("*.xlsx"):
+        if path.name.startswith("~$"):
+            continue
         try:
-            files.append(file_path)
+            stat = path.stat()
+            snapshot[path.resolve()] = (stat.st_mtime_ns, stat.st_size)
         except OSError:
             continue
+    return snapshot
 
-    if not files:
-        return []
 
-    # Sort newest first
-    files.sort(key=lambda f: f.stat().st_mtime, reverse=True)
-
-    return files[:limit]
+def find_generated_report_files(output_dir: Path, before: dict[Path, tuple[int, int]]) -> list[Path]:
+    changed = []
+    for path, signature in snapshot_report_files(output_dir).items():
+        if before.get(path) != signature:
+            changed.append(path)
+    return sorted(changed, key=lambda path: path.stat().st_mtime, reverse=True)
 
 
 

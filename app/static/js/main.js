@@ -35,6 +35,7 @@ class Modal {
 
 const generateModal = new Modal('generateModal');
 const jobStatusModal = new Modal('jobStatusModal');
+let reportCatalog = [];
 
 // Open generate modal
 document.getElementById('generateReportBtn').addEventListener('click', (e) => {
@@ -51,6 +52,7 @@ async function loadAvailableReports() {
     try {
         const response = await fetch('/api/reports/available');
         const reports = await response.json();
+        reportCatalog = reports;
         
         if (reports.length === 0) {
             container.innerHTML = '<p>No reports available</p>';
@@ -58,9 +60,10 @@ async function loadAvailableReports() {
         }
 
         container.innerHTML = reports.map(report => `
-            <div class="report-type-card" onclick="showEmailOptions('${report.id}', '${report.name}')">
+            <div class="report-type-card" onclick="showReportOptions('${report.id}')">
                 <h3><i class="fas fa-file-alt"></i> ${report.name}</h3>
                 <p>${report.description}</p>
+                ${report.arguments.length ? `<small>${report.arguments.length} configurable option(s)</small>` : ''}
             </div>
         `).join('');
 
@@ -71,8 +74,11 @@ async function loadAvailableReports() {
 }
 
 // Show email options for report
-async function showEmailOptions(reportId, reportName) {
+async function showReportOptions(reportId) {
     const container = document.getElementById('reportTypesList');
+    const report = reportCatalog.find(item => item.id === reportId);
+    if (!report) return;
+    const reportName = report.name;
 
     // Load groups for selection
     let groupOptions = '<option value="">Select a group (optional)</option>';
@@ -88,8 +94,10 @@ async function showEmailOptions(reportId, reportName) {
 
     container.innerHTML = `
         <div class="email-options-form">
-            <h3><i class="fas fa-envelope"></i> Email Options</h3>
+            <h3><i class="fas fa-sliders-h"></i> Report Options</h3>
             <p style="margin-bottom: 1.5rem;">Report: <strong>${reportName}</strong></p>
+
+            ${renderArgumentFields(report.arguments)}
             
             <div class="form-group">
                 <label for="emailGroup">
@@ -172,6 +180,13 @@ async function handleGroupSelection() {
 async function generateReportWithEmail(reportId) {
     const emailTo = document.getElementById('emailTo').value.trim();
     const emailCc = document.getElementById('emailCc').value.trim();
+    const report = reportCatalog.find(item => item.id === reportId);
+    const argumentsPayload = {};
+    for (const argument of (report?.arguments || [])) {
+        const input = document.getElementById(`reportArg_${argument.name}`);
+        if (!input) continue;
+        argumentsPayload[argument.name] = argument.type === 'bool' ? input.checked : input.value.trim();
+    }
 
     try {
         const response = await fetch('/api/reports/run', {
@@ -182,7 +197,8 @@ async function generateReportWithEmail(reportId) {
             body: JSON.stringify({
                 report_id: reportId,
                 email_to: emailTo || null,
-                email_cc: emailCc || null
+                email_cc: emailCc || null,
+                arguments: argumentsPayload
             })
         });
 
@@ -211,7 +227,24 @@ async function generateReportWithEmail(reportId) {
 
 // Generate a report (backwards compatibility)
 async function generateReport(reportId) {
-    showEmailOptions(reportId, 'Report');
+    showReportOptions(reportId);
+}
+
+function renderArgumentFields(argumentsList) {
+    if (!argumentsList.length) return '';
+    return `<h4 style="margin-bottom: 1rem;">Query Parameters</h4>` + argumentsList.map(argument => {
+        const required = argument.required ? 'required' : '';
+        const defaultValue = argument.default ?? '';
+        if (argument.type === 'bool') {
+            return `<div class="form-group"><label><input id="reportArg_${argument.name}" type="checkbox" ${defaultValue ? 'checked' : ''}> ${argument.label}</label><small>${argument.help || ''}</small></div>`;
+        }
+        const inputType = argument.type === 'int' ? 'number' : 'text';
+        return `<div class="form-group"><label for="reportArg_${argument.name}">${argument.label}${argument.required ? ' *' : ''}</label><input id="reportArg_${argument.name}" class="form-input" type="${inputType}" value="${escapeAttribute(defaultValue)}" ${required}><small>${argument.help || ''}</small></div>`;
+    }).join('');
+}
+
+function escapeAttribute(value) {
+    return String(value).replaceAll('&', '&amp;').replaceAll('"', '&quot;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
 }
 
 // ===========================

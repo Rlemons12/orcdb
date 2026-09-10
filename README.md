@@ -100,7 +100,26 @@ orcdb/
 python run_app.py
 ```
 
-The application will be available at: **http://localhost:5000**
+The development application will be available at: **http://localhost:5010**
+
+### Running Scripts
+
+List every script in the `scripts` directory:
+
+```bash
+python run_script.py --list
+```
+
+Run any script with its normal arguments:
+
+```bash
+python run_script.py run_lookup_user --identifier USER1
+python run_script.py run_work_order_full_picture --org-code XAU --work-order 123456
+```
+
+The launcher configures the project import path consistently. All `run_*.py`
+report scripts are also available from the web application's Generate Report
+dialog, including their required and optional arguments.
 
 ### Production Deployment
 
@@ -116,7 +135,7 @@ Or use the included systemd service file (create as needed).
 
 ### Accessing the Dashboard
 
-1. Open your browser to `http://localhost:5000`
+1. Open your browser to `http://localhost:5010`
 2. View statistics and recent reports on the homepage
 
 ### Generating Reports
@@ -131,7 +150,7 @@ Or use the included systemd service file (create as needed).
 
 **Method 3: API**
 ```bash
-curl -X POST http://localhost:5000/api/reports/run \
+curl -X POST http://localhost:5010/api/reports/run \
   -H "Content-Type: application/json" \
   -d '{"report_id": "qa_daily"}'
 ```
@@ -142,10 +161,16 @@ curl -X POST http://localhost:5000/api/reports/run \
 2. Reports are organized by category
 3. Click on any report to preview or download
 
+### Analytics
+
+The Analytics page lists every generated Excel workbook under `outputs`.
+It analyzes every sheet and automatically provides row and column counts,
+numeric summaries, categorical distributions, date trends, and a data preview.
+
 ### Downloading Reports
 
 - Click the download icon on any report
-- Or access directly: `http://localhost:5000/reports/download/<category>/<filename>`
+- Or access directly: `http://localhost:5010/reports/download/<category>/<filename>`
 
 ## API Endpoints
 

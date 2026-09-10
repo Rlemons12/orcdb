@@ -1,184 +1,132 @@
-"""
-WIP Analytics Dashboard
-Analyzes and visualizes WIP (Work In Progress) data
-"""
+from __future__ import annotations
+
+from pathlib import Path
+from typing import Any
 
 import pandas as pd
-from pathlib import Path
-from datetime import datetime, timedelta
-import json
 
 
-class WIPAnalytics:
-    """
-    Analyzes WIP data and generates visualizations
+class WorkbookAnalytics:
+    """Generate schema-aware analytics for every sheet in an Excel workbook."""
 
-    Expected columns:
-    - WIP_ENTITY_NAME
-    - CREATION_DATE
-    - QA_CREATION_DATE
-    - ASSET_ACTIVITY
-    - MAINTENANCE_OP_SEQ
-    - ASSET_NUMBER
-    - ASSET_DESCRIPTION
-    - QA_USER_CREATED_BY
-    - QA_USER_LAST_UPDATED
-    - Lot Number
-    - Location
-    - Reason
-    - Adjustment
-    - Description
-    - DESCRIPTION
-    """
+    def __init__(self, file_path: str | Path):
+        self.file_path = Path(file_path)
+        self.sheets = pd.read_excel(self.file_path, sheet_name=None)
 
-    def __init__(self, file_path: str):
-        """Load WIP data from Excel file"""
-        self.df = pd.read_excel(file_path)
-        self._clean_data()
+    @staticmethod
+    def _json_value(value: Any) -> Any:
+        if pd.isna(value):
+            return None
+        if hasattr(value, "isoformat"):
+            return value.isoformat()
+        if hasattr(value, "item"):
+            return value.item()
+        return value
 
-    def _clean_data(self):
-        """Clean and prepare data"""
-        # Convert dates
-        date_columns = ['CREATION_DATE', 'QA_CREATION_DATE']
-        for col in date_columns:
-            if col in self.df.columns:
-                self.df[col] = pd.to_datetime(self.df[col], errors='coerce')
+    @staticmethod
+    def _date_columns(df: pd.DataFrame) -> list[str]:
+        columns = []
+        for column in df.columns:
+            series = df[column]
+            if pd.api.types.is_datetime64_any_dtype(series):
+                columns.append(str(column))
+                continue
+            if pd.api.types.is_numeric_dtype(series):
+                continue
+            if any(token in str(column).upper() for token in ("DATE", "TIME", "MONTH")):
+                converted = pd.to_datetime(series, errors="coerce")
+                if len(series) and converted.notna().mean() >= 0.6:
+                    columns.append(str(column))
+        return columns
 
-        # Fill NaN values
-        self.df = self.df.fillna('')
+    def _analyze_sheet(self, name: str, df: pd.DataFrame) -> dict[str, Any]:
+        df = df.dropna(how="all")
+        numeric_columns = [
+            str(column) for column in df.select_dtypes(include="number").columns
+        ]
+        date_columns = self._date_columns(df)
+        categorical_columns = [
+            str(column)
+            for column in df.columns
+            if str(column) not in numeric_columns and str(column) not in date_columns
+        ]
 
-    def get_summary_stats(self) -> dict:
-        """Get summary statistics"""
+        numeric_summary = []
+        for column in numeric_columns[:12]:
+            series = pd.to_numeric(df[column], errors="coerce").dropna()
+            if series.empty:
+                continue
+            numeric_summary.append({
+                "column": column,
+                "count": int(series.count()),
+                "sum": self._json_value(series.sum()),
+                "average": self._json_value(series.mean()),
+                "minimum": self._json_value(series.min()),
+                "maximum": self._json_value(series.max()),
+            })
+
+        categorical_summary = []
+        for column in categorical_columns[:12]:
+            series = df[column].dropna().astype(str).str.strip()
+            series = series[series != ""]
+            if series.empty:
+                continue
+            counts = series.value_counts().head(10)
+            categorical_summary.append({
+                "column": column,
+                "unique": int(series.nunique()),
+                "values": [
+                    {"label": label, "count": int(count)}
+                    for label, count in counts.items()
+                ],
+            })
+
+        date_trends = []
+        for column in date_columns[:6]:
+            dates = pd.to_datetime(df[column], errors="coerce").dropna()
+            if dates.empty:
+                continue
+            counts = dates.dt.to_period("M").value_counts().sort_index()
+            date_trends.append({
+                "column": column,
+                "start": dates.min().isoformat(),
+                "end": dates.max().isoformat(),
+                "values": [
+                    {"label": str(period), "count": int(count)}
+                    for period, count in counts.items()
+                ],
+            })
+
+        preview = []
+        for record in df.head(10).to_dict(orient="records"):
+            preview.append({str(key): self._json_value(value) for key, value in record.items()})
+
         return {
-            'total_records': len(self.df),
-            'unique_entities': self.df['WIP_ENTITY_NAME'].nunique() if 'WIP_ENTITY_NAME' in self.df.columns else 0,
-            'unique_assets': self.df['ASSET_NUMBER'].nunique() if 'ASSET_NUMBER' in self.df.columns else 0,
-            'unique_locations': self.df['Location'].nunique() if 'Location' in self.df.columns else 0,
-            'unique_users': self.df['QA_USER_CREATED_BY'].nunique() if 'QA_USER_CREATED_BY' in self.df.columns else 0,
-            'date_range': self._get_date_range()
+            "name": name,
+            "rows": int(len(df)),
+            "columns": int(len(df.columns)),
+            "column_names": [str(column) for column in df.columns],
+            "numeric_summary": numeric_summary,
+            "categorical_summary": categorical_summary,
+            "date_trends": date_trends,
+            "preview": preview,
         }
 
-    def _get_date_range(self) -> dict:
-        """Get date range of data"""
-        if 'CREATION_DATE' in self.df.columns:
-            dates = self.df['CREATION_DATE'].dropna()
-            if len(dates) > 0:
-                return {
-                    'start': dates.min().strftime('%Y-%m-%d'),
-                    'end': dates.max().strftime('%Y-%m-%d')
-                }
-        return {'start': None, 'end': None}
-
-    def get_entities_by_date(self) -> dict:
-        """Count entities created per day"""
-        if 'CREATION_DATE' not in self.df.columns:
-            return {}
-
-        daily_counts = self.df.groupby(
-            self.df['CREATION_DATE'].dt.date
-        ).size().to_dict()
-
-        return {str(k): int(v) for k, v in daily_counts.items() if k}
-
-    def get_top_locations(self, limit: int = 10) -> dict:
-        """Get top locations by count"""
-        if 'Location' not in self.df.columns:
-            return {}
-
-        location_counts = self.df['Location'].value_counts().head(limit)
-        return location_counts.to_dict()
-
-    def get_top_assets(self, limit: int = 10) -> dict:
-        """Get top assets by activity count"""
-        if 'ASSET_NUMBER' not in self.df.columns:
-            return {}
-
-        asset_counts = self.df['ASSET_NUMBER'].value_counts().head(limit)
-        return asset_counts.to_dict()
-
-    def get_activity_breakdown(self) -> dict:
-        """Get breakdown by asset activity type"""
-        if 'ASSET_ACTIVITY' not in self.df.columns:
-            return {}
-
-        activity_counts = self.df['ASSET_ACTIVITY'].value_counts()
-        return activity_counts.to_dict()
-
-    def get_user_activity(self, limit: int = 10) -> dict:
-        """Get activity by user"""
-        if 'QA_USER_CREATED_BY' not in self.df.columns:
-            return {}
-
-        user_counts = self.df['QA_USER_CREATED_BY'].value_counts().head(limit)
-        return user_counts.to_dict()
-
-    def get_reason_breakdown(self) -> dict:
-        """Get breakdown by reason"""
-        if 'Reason' not in self.df.columns:
-            return {}
-
-        reason_counts = self.df['Reason'].value_counts()
-        return reason_counts.to_dict()
-
-    def get_weekly_trend(self) -> dict:
-        """Get weekly creation trend"""
-        if 'CREATION_DATE' not in self.df.columns:
-            return {}
-
-        # Group by week
-        weekly = self.df.groupby(
-            self.df['CREATION_DATE'].dt.to_period('W')
-        ).size()
-
-        return {str(k): int(v) for k, v in weekly.items()}
-
-    def get_monthly_trend(self) -> dict:
-        """Get monthly creation trend"""
-        if 'CREATION_DATE' not in self.df.columns:
-            return {}
-
-        # Group by month
-        monthly = self.df.groupby(
-            self.df['CREATION_DATE'].dt.to_period('M')
-        ).size()
-
-        return {str(k): int(v) for k, v in monthly.items()}
-
-    def get_all_analytics(self) -> dict:
-        """Get all analytics data for visualization"""
+    def get_all_analytics(self) -> dict[str, Any]:
+        sheets = [self._analyze_sheet(name, df) for name, df in self.sheets.items()]
         return {
-            'summary': self.get_summary_stats(),
-            'daily_trend': self.get_entities_by_date(),
-            'weekly_trend': self.get_weekly_trend(),
-            'monthly_trend': self.get_monthly_trend(),
-            'top_locations': self.get_top_locations(),
-            'top_assets': self.get_top_assets(),
-            'activity_breakdown': self.get_activity_breakdown(),
-            'user_activity': self.get_user_activity(),
-            'reason_breakdown': self.get_reason_breakdown()
+            "file": self.file_path.name,
+            "summary": {
+                "sheet_count": len(sheets),
+                "total_rows": sum(sheet["rows"] for sheet in sheets),
+                "total_columns": sum(sheet["columns"] for sheet in sheets),
+                "numeric_columns": sum(len(sheet["numeric_summary"]) for sheet in sheets),
+                "categorical_columns": sum(len(sheet["categorical_summary"]) for sheet in sheets),
+                "date_columns": sum(len(sheet["date_trends"]) for sheet in sheets),
+            },
+            "sheets": sheets,
         }
 
-    def export_to_json(self, output_path: str):
-        """Export analytics to JSON"""
-        analytics = self.get_all_analytics()
 
-        with open(output_path, 'w') as f:
-            json.dump(analytics, f, indent=2, default=str)
-
-        return output_path
-
-
-# Example usage
-if __name__ == "__main__":
-    # Example: Analyze a WIP report
-    analyzer = WIPAnalytics("path/to/wip_report.xlsx")
-
-    # Get summary
-    print("Summary Statistics:")
-    print(analyzer.get_summary_stats())
-
-    # Get all analytics
-    analytics = analyzer.get_all_analytics()
-
-    # Export to JSON
-    analyzer.export_to_json("wip_analytics.json")
+# Backward-compatible import for callers that used the old class name.
+WIPAnalytics = WorkbookAnalytics

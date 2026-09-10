@@ -1,122 +1,66 @@
-"""
-Analytics API Routes
-Flask routes for WIP analytics dashboard
-"""
+from __future__ import annotations
 
-from flask import Blueprint, jsonify, request, current_app, render_template
-from pathlib import Path
-from app.models.analytics import WIPAnalytics
+from datetime import datetime
 
-bp = Blueprint('analytics', __name__, url_prefix='/analytics')
+from flask import Blueprint, current_app, jsonify, render_template
+
+from app.models.analytics import WorkbookAnalytics
 
 
-@bp.route('/')
+bp = Blueprint("analytics", __name__, url_prefix="/analytics")
+
+
+def _resolve_report(filepath: str):
+    output_dir = current_app.config["OUTPUT_BASE_DIR"].resolve()
+    file_path = (output_dir / filepath).resolve()
+    file_path.relative_to(output_dir)
+    if not file_path.is_file() or file_path.suffix.lower() != ".xlsx":
+        raise FileNotFoundError(filepath)
+    return file_path
+
+
+@bp.route("/")
 def index():
-    """Analytics dashboard page"""
-    return render_template('analytics.html')
+    return render_template("analytics.html")
 
 
-@bp.route('/api/wip/<path:filepath>')
-def analyze_wip_report(filepath):
-    """
-    Analyze a WIP report and return analytics data
+@bp.route("/api/reports")
+def available_reports():
+    output_dir = current_app.config["OUTPUT_BASE_DIR"]
+    reports = []
+    if output_dir.exists():
+        for path in output_dir.rglob("*.xlsx"):
+            if path.name.startswith("~$"):
+                continue
+            try:
+                stat = path.stat()
+                reports.append({
+                    "path": path.relative_to(output_dir).as_posix(),
+                    "name": path.name,
+                    "category": path.parent.name,
+                    "modified": datetime.fromtimestamp(stat.st_mtime).isoformat(),
+                    "size": stat.st_size,
+                })
+            except OSError:
+                continue
+    reports.sort(key=lambda item: item["modified"], reverse=True)
+    return jsonify(reports)
 
-    Example: GET /api/analytics/wip/qa_daily_results/report_20260202.xlsx
-    """
+
+@bp.route("/api/workbook/<path:filepath>")
+def analyze_workbook(filepath):
     try:
-        # Get file path
-        output_dir = current_app.config['OUTPUT_BASE_DIR']
-        file_path = output_dir / filepath
-
-        # Security check
-        try:
-            file_path = file_path.resolve()
-            output_dir = output_dir.resolve()
-            file_path.relative_to(output_dir)
-        except ValueError:
-            return jsonify({'error': 'Invalid file path'}), 403
-
-        # Check if file exists
-        if not file_path.exists():
-            return jsonify({'error': 'File not found'}), 404
-
-        # Analyze the report
-        analyzer = WIPAnalytics(str(file_path))
-        analytics = analyzer.get_all_analytics()
-
+        analytics = WorkbookAnalytics(_resolve_report(filepath)).get_all_analytics()
         return jsonify(analytics)
-
-    except Exception as e:
-        return jsonify({
-            'error': 'Analysis failed',
-            'message': str(e)
-        }), 500
-
-
-@bp.route('/api/wip/summary/<path:filepath>')
-def get_wip_summary(filepath):
-    """Get just summary statistics"""
-    try:
-        output_dir = current_app.config['OUTPUT_BASE_DIR']
-        file_path = output_dir / filepath
-
-        # Security check
-        file_path = file_path.resolve()
-        output_dir = output_dir.resolve()
-        file_path.relative_to(output_dir)
-
-        if not file_path.exists():
-            return jsonify({'error': 'File not found'}), 404
-
-        analyzer = WIPAnalytics(str(file_path))
-        summary = analyzer.get_summary_stats()
-
-        return jsonify(summary)
-
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
+    except ValueError:
+        return jsonify({"error": "Invalid file path"}), 403
+    except FileNotFoundError:
+        return jsonify({"error": "File not found"}), 404
+    except Exception as exc:
+        current_app.logger.exception("Workbook analysis failed")
+        return jsonify({"error": "Analysis failed", "message": str(exc)}), 500
 
 
-@bp.route('/api/wip/chart/<chart_type>/<path:filepath>')
-def get_chart_data(chart_type, filepath):
-    """
-    Get specific chart data
-
-    chart_type: daily_trend, weekly_trend, monthly_trend, locations,
-                assets, activities, users, reasons
-    """
-    try:
-        output_dir = current_app.config['OUTPUT_BASE_DIR']
-        file_path = output_dir / filepath
-
-        # Security check
-        file_path = file_path.resolve()
-        output_dir = output_dir.resolve()
-        file_path.relative_to(output_dir)
-
-        if not file_path.exists():
-            return jsonify({'error': 'File not found'}), 404
-
-        analyzer = WIPAnalytics(str(file_path))
-
-        # Get requested chart data
-        chart_methods = {
-            'daily_trend': analyzer.get_entities_by_date,
-            'weekly_trend': analyzer.get_weekly_trend,
-            'monthly_trend': analyzer.get_monthly_trend,
-            'locations': analyzer.get_top_locations,
-            'assets': analyzer.get_top_assets,
-            'activities': analyzer.get_activity_breakdown,
-            'users': analyzer.get_user_activity,
-            'reasons': analyzer.get_reason_breakdown
-        }
-
-        if chart_type not in chart_methods:
-            return jsonify({'error': 'Invalid chart type'}), 400
-
-        data = chart_methods[chart_type]()
-
-        return jsonify(data)
-
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
+@bp.route("/api/wip/<path:filepath>")
+def analyze_wip_report(filepath):
+    return analyze_workbook(filepath)

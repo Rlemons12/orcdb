@@ -79,13 +79,13 @@ QUERY_DEFINITIONS: dict[str, QueryDefinition] = {
     ),
     "lookup_user": QueryDefinition(
         script_name="run_lookup_user.py",
-        description="Look up a user by user name, user ID, or employee ID.",
+        description="Look up a user by user name, user ID, or Oracle person ID.",
         sql_file="lookup_user.sql",
         output_dir="lookup_user",
         file_prefix="lookup_user",
         sheet_name="User Lookup",
         args=(
-            ArgSpec("--identifier", "IDENTIFIER", "User name, user ID, or employee ID.", required=True),
+            ArgSpec("--identifier", "IDENTIFIER", "User name, user ID, or Oracle person ID.", required=True),
         ),
     ),
     "users_by_responsibility": QueryDefinition(
@@ -108,7 +108,19 @@ QUERY_DEFINITIONS: dict[str, QueryDefinition] = {
         file_prefix="user_responsibilities",
         sheet_name="User Resp",
         args=(
-            ArgSpec("--identifier", "IDENTIFIER", "User name, user ID, or employee ID.", required=True),
+            ArgSpec("--identifier", "IDENTIFIER", "User name, user ID, or Oracle person ID.", required=True),
+        ),
+    ),
+    "user_responsibilities_by_employee_number": QueryDefinition(
+        script_name="run_user_responsibilities_by_employee_number.py",
+        description="Find EAM responsibilities assigned to a visible HR employee number.",
+        sql_file="user_responsibilities_by_employee_number.sql",
+        output_dir="user_responsibilities_by_employee_number",
+        file_prefix="user_responsibilities_by_employee_number",
+        sheet_name="Employee Resp",
+        args=(
+            ArgSpec("--employee-number", "EMPLOYEE_NUMBER", "Visible HR employee number, such as 13636.", required=True),
+            ArgSpec("--app-short-name", "APP_SHORT_NAME", "Application short name.", default="EAM", upper=True),
         ),
     ),
     "qa_groups_for_user": QueryDefinition(
@@ -119,7 +131,7 @@ QUERY_DEFINITIONS: dict[str, QueryDefinition] = {
         file_prefix="qa_groups_for_user",
         sheet_name="QA Groups",
         args=(
-            ArgSpec("--identifier", "IDENTIFIER", "User name, user ID, or employee ID.", required=True),
+            ArgSpec("--identifier", "IDENTIFIER", "User name, user ID, or Oracle person ID.", required=True),
         ),
     ),
     "qa_group_members": QueryDefinition(
@@ -203,6 +215,30 @@ QUERY_DEFINITIONS: dict[str, QueryDefinition] = {
         args=(
             ArgSpec("--org-code", "ORG_CODE", "Organization code.", default="XAU", upper=True),
             ArgSpec("--days", "DAYS", "Rolling number of days.", arg_type=int, default=1, sql_kind="int"),
+        ),
+    ),
+    "qa_plan_locations_all": QueryDefinition(
+        script_name="run_qa_plan_locations_all.py",
+        description="All QA plan names with optional Location/Station values.",
+        sql_file="qa_plan_locations_all.sql",
+        output_dir="qa_location_assets",
+        file_prefix="qa_plan_locations_all",
+        sheet_name="QA Plan Locations",
+        args=(
+            ArgSpec("--org-code", "ORG_CODE", "Organization code.", default="XAU", upper=True),
+            ArgSpec("--plan-name-like", "PLAN_NAME_LIKE", "SQL LIKE pattern for QA plan names.", default="XAU MECH_%"),
+        ),
+    ),
+    "qa_plan_equipment_group_assets": QueryDefinition(
+        script_name="run_qa_plan_equipment_group_assets.py",
+        description="Parsed QA plan equipment groups with inferred EAM assets.",
+        sql_file="qa_plan_equipment_group_assets.sql",
+        output_dir="qa_location_assets",
+        file_prefix="qa_plan_equipment_group_assets",
+        sheet_name="Plan Group Assets",
+        args=(
+            ArgSpec("--org-code", "ORG_CODE", "Organization code.", default="XAU", upper=True),
+            ArgSpec("--plan-name-like", "PLAN_NAME_LIKE", "SQL LIKE pattern for QA plan names.", default="XAU MECH_%"),
         ),
     ),
     "person_work_order_history": QueryDefinition(
@@ -344,6 +380,37 @@ QUERY_DEFINITIONS: dict[str, QueryDefinition] = {
             ArgSpec("--months", "MONTHS", "Rolling number of months.", arg_type=int, default=12, sql_kind="int"),
         ),
     ),
+    "spare_parts_spend_detail": QueryDefinition(
+        script_name="run_spare_parts_spend_detail.py",
+        description="Spare-parts spend detail for issued work-order material.",
+        sql_file="spare_parts_spend_detail.sql",
+        output_dir="spare_parts_spend_detail",
+        file_prefix="spare_parts_spend_detail",
+        sheet_name="Spare Parts Spend",
+        args=(
+            ArgSpec("--org-code", "ORG_CODE", "Organization code.", default="XAU", upper=True),
+            ArgSpec("--months", "MONTHS", "Rolling number of months.", arg_type=int, default=12, sql_kind="int"),
+            ArgSpec("--department-code", "DEPARTMENT_CODE", "Department code, or ALL.", default="ALL", upper=True),
+            ArgSpec("--asset-number", "ASSET_NUMBER", "Asset number, or ALL.", default="ALL", upper=True),
+            ArgSpec("--part-number", "PART_NUMBER", "Part number, or ALL.", default="ALL", upper=True),
+            ArgSpec("--split", "SPLIT", "ALL, PLANNED, or REACTIVE.", default="ALL", upper=True),
+        ),
+    ),
+    "equipment_work_po_detail": QueryDefinition(
+        script_name="run_equipment_work_po_detail.py",
+        description="PO detail directly linked to equipment work orders.",
+        sql_file="equipment_work_po_detail.sql",
+        output_dir="equipment_work_po_detail",
+        file_prefix="equipment_work_po_detail",
+        sheet_name="Equipment Work POs",
+        args=(
+            ArgSpec("--org-code", "ORG_CODE", "Organization code.", default="XAU", upper=True),
+            ArgSpec("--months", "MONTHS", "Rolling number of months.", arg_type=int, default=12, sql_kind="int"),
+            ArgSpec("--department-code", "DEPARTMENT_CODE", "Department code, or ALL.", default="ALL", upper=True),
+            ArgSpec("--asset-number", "ASSET_NUMBER", "Asset number, or ALL.", default="ALL", upper=True),
+            ArgSpec("--split", "SPLIT", "ALL, PLANNED, or REACTIVE.", default="ALL", upper=True),
+        ),
+    ),
     "configured_bom_for_asset": QueryDefinition(
         script_name="run_configured_bom_for_asset.py",
         description="Official configured BOM for an asset.",
@@ -384,6 +451,17 @@ QUERY_DEFINITIONS: dict[str, QueryDefinition] = {
             ArgSpec("--active-only", "ACTIVE_ONLY", "Use 1 for active components only, 0 for all components.", arg_type=int, default=1, sql_kind="int"),
         ),
     ),
+    "oracle_assets_for_hierarchy": QueryDefinition(
+        script_name="run_oracle_assets_for_hierarchy.py",
+        description="Oracle asset hierarchy source without requiring BOM parts.",
+        sql_file="oracle_assets_for_hierarchy.sql",
+        output_dir="oracle_assets_for_hierarchy",
+        file_prefix="oracle_assets_for_hierarchy",
+        sheet_name="Oracle Assets",
+        args=(
+            ArgSpec("--org-code", "ORG_CODE", "Organization code.", default="XAU", upper=True),
+        ),
+    ),
     "top_assets_by_time_charged": QueryDefinition(
         script_name="run_top_assets_by_time_charged.py",
         description="Top assets by actual time charged.",
@@ -395,6 +473,30 @@ QUERY_DEFINITIONS: dict[str, QueryDefinition] = {
             ArgSpec("--org-code", "ORG_CODE", "Organization code.", default="XAU", upper=True),
             ArgSpec("--months", "MONTHS", "Rolling number of months.", arg_type=int, default=12, sql_kind="int"),
             ArgSpec("--limit", "LIMIT", "Maximum number of rows.", arg_type=int, default=10, sql_kind="int"),
+        ),
+    ),
+    "pm_documented_hours_by_craft_month": QueryDefinition(
+        script_name="run_pm_documented_hours_by_craft_month.py",
+        description="Documented preventive-maintenance hours per month by craft.",
+        sql_file="pm_documented_hours_by_craft_month.sql",
+        output_dir="pm_documented_hours_by_craft_month",
+        file_prefix="pm_documented_hours_by_craft_month",
+        sheet_name="PM Hours Craft",
+        args=(
+            ArgSpec("--org-code", "ORG_CODE", "Organization code.", default="XAU", upper=True),
+            ArgSpec("--months", "MONTHS", "Rolling number of months.", arg_type=int, default=12, sql_kind="int"),
+        ),
+    ),
+    "pm_documented_hours_by_resource_month": QueryDefinition(
+        script_name="run_pm_documented_hours_by_resource_month.py",
+        description="Excel booklet of documented work-order hours by resource.",
+        sql_file="pm_documented_hours_by_resource_detail.sql",
+        output_dir="pm_documented_hours_by_resource_month",
+        file_prefix="documented_hours_by_resource_booklet",
+        sheet_name="PM Resource Detail",
+        args=(
+            ArgSpec("--org-code", "ORG_CODE", "Organization code.", default="XAU", upper=True),
+            ArgSpec("--months", "MONTHS", "Rolling number of months.", arg_type=int, default=12, sql_kind="int"),
         ),
     ),
     "employees_for_resource": QueryDefinition(
@@ -420,6 +522,21 @@ QUERY_DEFINITIONS: dict[str, QueryDefinition] = {
             ArgSpec("--org-code", "ORG_CODE", "Organization code.", default="XAU", upper=True),
             ArgSpec("--department-code", "DEPARTMENT_CODE", "Department code.", required=True),
             ArgSpec("--days", "DAYS", "Rolling number of days.", arg_type=int, default=90, sql_kind="int"),
+        ),
+    ),
+    "work_order_history_planned_vs_reactive": QueryDefinition(
+        script_name="run_work_order_history_planned_vs_reactive.py",
+        description="12-month work-order history split into planned vs reactive.",
+        sql_file="work_order_history_planned_vs_reactive.sql",
+        output_dir="work_order_history_planned_vs_reactive",
+        file_prefix="work_order_history_planned_vs_reactive",
+        sheet_name="WO Planned Reactive",
+        args=(
+            ArgSpec("--org-code", "ORG_CODE", "Organization code.", default="XAU", upper=True),
+            ArgSpec("--months", "MONTHS", "Rolling number of months.", arg_type=int, default=12, sql_kind="int"),
+            ArgSpec("--department-code", "DEPARTMENT_CODE", "Department code, or ALL.", default="ALL", upper=True),
+            ArgSpec("--asset-number", "ASSET_NUMBER", "Asset number, or ALL.", default="ALL", upper=True),
+            ArgSpec("--split", "SPLIT", "ALL, PLANNED, or REACTIVE.", default="ALL", upper=True),
         ),
     ),
     "resource_roster": QueryDefinition(
