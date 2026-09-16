@@ -1,0 +1,1008 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>orcdb_sql_queries</title>
+<style>
+  body { font-family: Georgia, 'Times New Roman', serif; margin: 0; color: #111; }
+  main { max-width: 900px; margin: 0 auto; padding: 32px 40px 48px; }
+  h1, h2, h3, h4 { font-family: Arial, Helvetica, sans-serif; margin-top: 1.4em; }
+  table { border-collapse: collapse; width: 100%; margin: 1em 0; font-size: 12px; }
+  th, td { border: 1px solid #666; padding: 6px 8px; vertical-align: top; }
+  th { background: #f1f1f1; }
+  code { font-family: Consolas, monospace; background: #f5f5f5; padding: 0.1em 0.3em; }
+  pre code { display: block; padding: 12px; overflow-x: auto; }
+  a { color: #0645ad; text-decoration: none; }
+  @page { size: Letter; margin: 0.6in; }
+</style>
+</head>
+<body>
+<main>
+<h1 id="oracle-eam-sql-query-reference">Oracle EAM SQL Query Reference</h1>
+<p><strong>Schema:</strong> <code>APPS</code> | <strong>Org:</strong> 1169 | <strong>Org Code:</strong> <code>XAU</code></p>
+<p>Queries organized from simplest to most complex.
+All queries are read-only and scoped to org 1169 unless otherwise noted.</p>
+<hr />
+<h2 id="tier-1-single-table-lookups">Tier 1 — Single Table Lookups</h2>
+<h3 id="1-verify-org-code-and-id-mapping">1. Verify org code and ID mapping</h3>
+<pre><code class="language-sql">SELECT ORGANIZATION_ID, ORGANIZATION_CODE
+FROM APPS.MTL_PARAMETERS
+WHERE ORGANIZATION_CODE = 'XAU';
+</code></pre>
+<hr />
+<h3 id="2-look-up-a-user-by-name-id-or-employee-number">2. Look up a user — by name, ID, or employee number</h3>
+<pre><code class="language-sql">SELECT
+    USER_ID,
+    USER_NAME,
+    DESCRIPTION        AS FULL_NAME,
+    EMAIL_ADDRESS,
+    EMPLOYEE_ID,
+    END_DATE
+FROM APPS.FND_USER
+WHERE USER_NAME             = '10169062'
+   OR TO_CHAR(USER_ID)      = '10169062'
+   OR TO_CHAR(EMPLOYEE_ID)  = '10169062';
+</code></pre>
+<hr />
+<h3 id="3-find-all-active-users-with-a-specific-eam-responsibility">3. Find all active users with a specific EAM responsibility</h3>
+<pre><code class="language-sql">SELECT
+    FU.USER_NAME,
+    FU.DESCRIPTION  AS FULL_NAME,
+    FU.EMAIL_ADDRESS,
+    FUR.START_DATE,
+    FUR.END_DATE
+FROM APPS.FND_USER FU
+         JOIN APPS.FND_USER_RESP_GROUPS_DIRECT FUR ON FUR.USER_ID = FU.USER_ID
+         JOIN APPS.FND_RESPONSIBILITY FR            ON FR.RESPONSIBILITY_ID = FUR.RESPONSIBILITY_ID
+         JOIN APPS.FND_RESPONSIBILITY_TL FRT        ON FRT.RESPONSIBILITY_ID = FR.RESPONSIBILITY_ID
+    AND FRT.LANGUAGE = 'US'
+         JOIN APPS.FND_APPLICATION FA               ON FA.APPLICATION_ID = FR.APPLICATION_ID
+WHERE FRT.RESPONSIBILITY_NAME  = 'ICU EAM Manager - XAU'
+  AND FA.APPLICATION_SHORT_NAME = 'EAM'
+  AND (FU.END_DATE IS NULL OR FU.END_DATE &gt; SYSDATE)
+ORDER BY FU.USER_NAME;
+</code></pre>
+<hr />
+<h3 id="4-find-all-responsibilities-assigned-to-a-specific-user">4. Find all responsibilities assigned to a specific user</h3>
+<pre><code class="language-sql">SELECT
+    FU.USER_ID,
+    FU.USER_NAME,
+    FU.DESCRIPTION          AS FULL_NAME,
+    FU.EMAIL_ADDRESS,
+    FU.EMPLOYEE_ID,
+    FRT.RESPONSIBILITY_NAME,
+    FA.APPLICATION_SHORT_NAME,
+    FUR.START_DATE,
+    FUR.END_DATE
+FROM APPS.FND_USER FU
+         LEFT JOIN APPS.FND_USER_RESP_GROUPS_DIRECT FUR ON FU.USER_ID = FUR.USER_ID
+         LEFT JOIN APPS.FND_RESPONSIBILITY FR            ON FR.RESPONSIBILITY_ID = FUR.RESPONSIBILITY_ID
+         LEFT JOIN APPS.FND_RESPONSIBILITY_TL FRT        ON FR.RESPONSIBILITY_ID = FRT.RESPONSIBILITY_ID
+    AND FRT.LANGUAGE = 'US'
+         LEFT JOIN APPS.FND_APPLICATION FA               ON FR.APPLICATION_ID = FA.APPLICATION_ID
+WHERE FU.USER_NAME            = '10169062'
+   OR TO_CHAR(FU.USER_ID)     = '10169062'
+   OR TO_CHAR(FU.EMPLOYEE_ID) = '10169062'
+ORDER BY FRT.RESPONSIBILITY_NAME;
+</code></pre>
+<hr />
+<h3 id="5-find-what-qa-groups-a-user-belongs-to">5. Find what QA groups a user belongs to</h3>
+<pre><code class="language-sql">SELECT
+    USER_ID,
+    USER_NAME,
+    PERSON_NAME,
+    EMAIL_ADDRESS,
+    GROUP_NAME,
+    STATUS,
+    LAST_UPDATE_DATE
+FROM APPS.QA_USER_GROUP_V
+WHERE USER_NAME = '10169062'   -- or: WHERE USER_ID = 35566
+ORDER BY GROUP_NAME;
+</code></pre>
+<hr />
+<h3 id="6-find-all-members-of-a-qa-group">6. Find all members of a QA group</h3>
+<pre><code class="language-sql">SELECT
+    USER_NAME,
+    PERSON_NAME,
+    EMAIL_ADDRESS,
+    GROUP_NAME,
+    STATUS,
+    LAST_UPDATE_DATE
+FROM APPS.QA_USER_GROUP_V
+WHERE GROUP_NAME = 'YOUR GROUP NAME'
+  AND STATUS     = 'A'
+ORDER BY PERSON_NAME;
+</code></pre>
+<hr />
+<h3 id="7-list-all-released-work-orders-for-an-asset">7. List all released work orders for an asset</h3>
+<pre><code class="language-sql">SELECT
+    WIP_ENTITY_NAME         AS WORK_ORDER,
+    ASSET_NUMBER,
+    ASSET_DESCRIPTION,
+    ASSET_ACTIVITY,
+    WORK_ORDER_STATUS,
+    WORK_ORDER_TYPE_DISP    AS WO_TYPE,
+    TO_CHAR(CREATION_DATE,
+            'MM/DD/YYYY')   AS CREATED,
+    TO_CHAR(SCHEDULED_START_DATE,
+            'MM/DD/YYYY')   AS SCHEDULED_START
+FROM APPS.EAM_WORK_ORDERS_V
+WHERE ORGANIZATION_ID    = 1169
+  AND ASSET_NUMBER       = 'AU-AFL31600-00'
+  AND WORK_ORDER_STATUS  = 'Released'
+ORDER BY CREATION_DATE DESC;
+</code></pre>
+<hr />
+<h3 id="8-list-all-cancelled-work-orders-last-15-days">8. List all cancelled work orders — last 15 days</h3>
+<pre><code class="language-sql">SELECT
+    WIP_ENTITY_NAME       AS WORK_ORDER,
+    ASSET_NUMBER,
+    ASSET_DESCRIPTION,
+    ASSET_ACTIVITY,
+    WORK_ORDER_STATUS,
+    CLASS_CODE,
+    TO_CHAR(CREATION_DATE,
+            'MM/DD/YYYY') AS CREATED
+FROM APPS.EAM_WORK_ORDERS_V
+WHERE ORGANIZATION_ID   = 1169
+  AND WORK_ORDER_STATUS = 'Cancelled'
+  AND CREATION_DATE     &gt;= SYSDATE - 15
+ORDER BY CREATION_DATE DESC;
+</code></pre>
+<hr />
+<h2 id="tier-2-two-to-three-table-joins">Tier 2 — Two to Three Table Joins</h2>
+<h3 id="9-qa-results-for-a-work-order-with-technician-name">9. QA results for a work order with technician name</h3>
+<pre><code class="language-sql">SELECT
+    EWO.WIP_ENTITY_NAME                         AS WORK_ORDER,
+    EWO.ASSET_NUMBER,
+    EWO.ASSET_DESCRIPTION,
+    PEO.FULL_NAME                               AS TECHNICIAN,
+    FU.USER_NAME                                AS BADGE_NUMBER,
+    TO_CHAR(QR.QA_CREATION_DATE,
+            'MM/DD/YYYY HH24:MI:SS')            AS INSPECTION_DATE,
+    QR.MAINTENANCE_OP_SEQ                       AS OP_SEQ,
+    QR.CHARACTER1                               AS LOT_NUMBER,
+    QR.CHARACTER2                               AS LOCATION,
+    QR.CHARACTER3                               AS REASON,
+    QR.CHARACTER4                               AS ADJUSTMENT,
+    QR.COMMENT1                                 AS DESCRIPTION
+FROM APPS.EAM_WORK_ORDERS_V EWO
+         JOIN APPS.QA_RESULTS QR
+              ON  QR.WORK_ORDER_ID   = EWO.WIP_ENTITY_ID
+                  AND QR.ORGANIZATION_ID = EWO.ORGANIZATION_ID
+         JOIN APPS.FND_USER FU
+              ON  FU.USER_ID         = QR.QA_CREATED_BY
+         JOIN APPS.PER_ALL_PEOPLE_F PEO
+              ON  PEO.PERSON_ID      = FU.EMPLOYEE_ID
+                  AND SYSDATE BETWEEN PEO.EFFECTIVE_START_DATE AND PEO.EFFECTIVE_END_DATE
+WHERE
+    EWO.ORGANIZATION_ID  = 1169
+  AND EWO.WIP_ENTITY_NAME = 'AU14857998'
+ORDER BY QR.QA_CREATION_DATE DESC;
+</code></pre>
+<hr />
+<h3 id="10-parts-charged-to-a-work-order">10. Parts charged to a work order</h3>
+<pre><code class="language-sql">SELECT
+    EWO.WIP_ENTITY_NAME                         AS WORK_ORDER,
+    EWO.ASSET_NUMBER,
+    MTT.TRANSACTION_TYPE_NAME                   AS TRANSACTION_TYPE,
+    TO_CHAR(MMT.TRANSACTION_DATE,
+            'MM/DD/YYYY HH24:MI:SS')            AS TRANSACTION_DATE,
+    MSI.SEGMENT1                                AS PART_NUMBER,
+    MSI.DESCRIPTION                             AS PART_DESCRIPTION,
+    MMT.TRANSACTION_QUANTITY                    AS QTY,
+    MMT.TRANSACTION_UOM                         AS UOM,
+    MMT.SUBINVENTORY_CODE                       AS FROM_SUBINVENTORY,
+    MMT.TRANSACTION_REFERENCE                   AS REFERENCE
+FROM APPS.EAM_WORK_ORDERS_V EWO
+         JOIN INV.MTL_MATERIAL_TRANSACTIONS MMT
+              ON  MMT.TRANSACTION_SOURCE_ID      = EWO.WIP_ENTITY_ID
+                  AND MMT.ORGANIZATION_ID            = EWO.ORGANIZATION_ID
+                  AND MMT.TRANSACTION_SOURCE_TYPE_ID = 5
+         JOIN INV.MTL_SYSTEM_ITEMS_B MSI
+              ON  MSI.INVENTORY_ITEM_ID = MMT.INVENTORY_ITEM_ID
+                  AND MSI.ORGANIZATION_ID   = MMT.ORGANIZATION_ID
+         JOIN INV.MTL_TRANSACTION_TYPES MTT
+              ON  MTT.TRANSACTION_TYPE_ID = MMT.TRANSACTION_TYPE_ID
+WHERE
+    EWO.ORGANIZATION_ID   = 1169
+  AND EWO.WIP_ENTITY_NAME = 'AU14857998'
+ORDER BY MMT.TRANSACTION_DATE DESC;
+</code></pre>
+<hr />
+<h3 id="11-resources-equipment-assigned-to-an-employee">11. Resources (equipment) assigned to an employee</h3>
+<pre><code class="language-sql">SELECT
+    PEO.FULL_NAME,
+    BR.RESOURCE_CODE,
+    BR.DESCRIPTION          AS RESOURCE_DESCRIPTION,
+    BR.UNIT_OF_MEASURE,
+    BRE.EFFECTIVE_START_DATE,
+    BRE.EFFECTIVE_END_DATE
+FROM APPS.PER_ALL_PEOPLE_F PEO
+         JOIN BOM.BOM_RESOURCE_EMPLOYEES BRE
+              ON  BRE.PERSON_ID       = PEO.PERSON_ID
+                  AND SYSDATE            &lt;= BRE.EFFECTIVE_END_DATE
+         JOIN BOM.BOM_RESOURCES BR
+              ON  BR.RESOURCE_ID      = BRE.RESOURCE_ID
+                  AND BR.ORGANIZATION_ID  = BRE.ORGANIZATION_ID
+WHERE
+    SYSDATE BETWEEN PEO.EFFECTIVE_START_DATE AND PEO.EFFECTIVE_END_DATE
+  AND BR.ORGANIZATION_ID = 1169
+  AND UPPER(PEO.FULL_NAME) LIKE UPPER('%Smith%')
+ORDER BY PEO.FULL_NAME, BR.RESOURCE_CODE;
+</code></pre>
+<hr />
+<h3 id="12-work-order-operations-with-department-name">12. Work order operations with department name</h3>
+<pre><code class="language-sql">SELECT
+    EWO.WIP_ENTITY_NAME         AS WORK_ORDER,
+    EWO.ASSET_NUMBER,
+    WO.OPERATION_SEQ_NUM        AS OP_SEQ,
+    BD.DEPARTMENT_CODE,
+    BD.DESCRIPTION              AS DEPARTMENT_DESCRIPTION,
+    WO.OPERATION_COMPLETED,
+    WO.LAST_UPDATE_DATE
+FROM APPS.EAM_WORK_ORDERS_V EWO
+         JOIN APPS.WIP_OPERATIONS_V WO
+              ON  WO.WIP_ENTITY_ID   = EWO.WIP_ENTITY_ID
+                  AND WO.ORGANIZATION_ID = EWO.ORGANIZATION_ID
+         JOIN BOM.BOM_DEPARTMENTS BD
+              ON  BD.DEPARTMENT_ID    = WO.DEPARTMENT_ID
+                  AND BD.ORGANIZATION_ID  = WO.ORGANIZATION_ID
+WHERE
+    EWO.ORGANIZATION_ID  = 1169
+  AND EWO.WIP_ENTITY_NAME = 'AU14857998'
+ORDER BY WO.OPERATION_SEQ_NUM;
+</code></pre>
+<hr />
+<h3 id="13-open-dm-work-orders-at-operation-step-10-with-assigned-resource">13. Open DM work orders at operation step 10 with assigned resource</h3>
+<pre><code class="language-sql">SELECT DISTINCT
+    EWO.WIP_ENTITY_NAME,
+    EWO.WIP_ENTITY_ID,
+    TO_CHAR(EWO.CREATION_DATE,
+            'MM/DD/YYYY HH24:MI:SS')  AS CREATION_DATE_TIME,
+    EWO.ASSET_NUMBER,
+    EWO.WORK_ORDER_STATUS,
+    WO.OPERATION_SEQ_NUM,
+    WO.OPERATION_COMPLETED,
+    RES.INSTANCE_NAME,
+    EWO.DESCRIPTION
+FROM APPS.WIP_OPERATIONS_V WO1
+         JOIN APPS.EAM_WORK_ORDERS_V EWO
+              ON  EWO.WIP_ENTITY_ID = WO1.WIP_ENTITY_ID
+         JOIN APPS.WIP_OPERATIONS_V WO
+              ON  EWO.WIP_ENTITY_ID = WO.WIP_ENTITY_ID
+         JOIN APPS.WIP_OP_RESOURCE_INSTANCES_V RES
+              ON  RES.WIP_ENTITY_ID     = EWO.WIP_ENTITY_ID
+                  AND RES.OPERATION_SEQ_NUM = WO.OPERATION_SEQ_NUM
+         JOIN APPS.MTL_PARAMETERS MP
+              ON  MP.ORGANIZATION_ID = EWO.ORGANIZATION_ID
+WHERE
+    EWO.ORGANIZATION_ID       = 1169
+  AND WO1.OPERATION_SEQ_NUM = 10
+  AND WO.OPERATION_SEQ_NUM  = 10
+  AND WO1.OPERATION_COMPLETED = 'N'
+  AND EWO.USER_DEFINED_STATUS_ID = 3
+  AND MP.ORGANIZATION_CODE   = 'XAU'
+  AND EWO.WORK_ORDER_TYPE_DISP = 'DM'
+  AND EWO.ASSET_NUMBER LIKE 'AU%'
+ORDER BY CREATION_DATE_TIME ASC;
+</code></pre>
+<hr />
+<h3 id="14-qa-results-enriched-with-qa-group-membership">14. QA results enriched with QA group membership</h3>
+<pre><code class="language-sql">SELECT
+    EWO.WIP_ENTITY_NAME                     AS WORK_ORDER,
+    EWO.ASSET_NUMBER,
+    QUG.PERSON_NAME                         AS TECHNICIAN,
+    QUG.USER_NAME                           AS BADGE_NUMBER,
+    QUG.GROUP_NAME                          AS QA_GROUP,
+    TO_CHAR(QR.QA_CREATION_DATE,
+            'MM/DD/YYYY HH24:MI:SS')        AS INSPECTION_DATE,
+    QR.CHARACTER1                           AS LOT_NUMBER,
+    QR.CHARACTER2                           AS LOCATION,
+    QR.CHARACTER3                           AS REASON,
+    QR.CHARACTER4                           AS ADJUSTMENT,
+    QR.COMMENT1                             AS DESCRIPTION
+FROM APPS.EAM_WORK_ORDERS_V EWO
+         JOIN APPS.QA_RESULTS QR
+              ON  QR.WORK_ORDER_ID   = EWO.WIP_ENTITY_ID
+                  AND QR.ORGANIZATION_ID = EWO.ORGANIZATION_ID
+         JOIN APPS.QA_USER_GROUP_V QUG
+              ON  QUG.USER_ID        = QR.QA_CREATED_BY
+                  AND QUG.STATUS         = 'A'
+WHERE
+    EWO.ORGANIZATION_ID = 1169
+  AND QR.QA_CREATION_DATE &gt;= SYSDATE - 1
+ORDER BY QR.QA_CREATION_DATE DESC;
+</code></pre>
+<hr />
+<h3 id="15-all-work-orders-completed-by-a-named-employee-rolling-window">15. All work orders completed by a named employee — rolling window</h3>
+<pre><code class="language-sql">SELECT DISTINCT
+    PEO.FULL_NAME,
+    FU.USER_NAME                            AS BADGE_NUMBER,
+    EWO.WIP_ENTITY_NAME                     AS WORK_ORDER,
+    EWO.WORK_ORDER_STATUS,
+    EWO.ASSET_NUMBER,
+    EWO.ASSET_ACTIVITY,
+    EWO.ASSET_DESCRIPTION,
+    TO_CHAR(QR.QA_CREATION_DATE,
+            'MM/DD/YYYY HH24:MI:SS')        AS INSPECTION_DATE,
+    QR.CHARACTER1                           AS LOT_NUMBER,
+    QR.CHARACTER2                           AS LOCATION,
+    QR.CHARACTER3                           AS REASON,
+    QR.CHARACTER4                           AS ADJUSTMENT,
+    QR.COMMENT1                             AS DESCRIPTION
+FROM APPS.PER_ALL_PEOPLE_F PEO
+         JOIN APPS.FND_USER FU
+              ON  FU.EMPLOYEE_ID     = PEO.PERSON_ID
+         JOIN APPS.QA_RESULTS QR
+              ON  QR.QA_CREATED_BY   = FU.USER_ID
+                  AND QR.ORGANIZATION_ID = 1169
+         JOIN APPS.EAM_WORK_ORDERS_V EWO
+              ON  EWO.WIP_ENTITY_ID   = QR.WORK_ORDER_ID
+                  AND EWO.ORGANIZATION_ID = QR.ORGANIZATION_ID
+WHERE
+    SYSDATE BETWEEN PEO.EFFECTIVE_START_DATE AND PEO.EFFECTIVE_END_DATE
+  AND UPPER(PEO.FULL_NAME) LIKE UPPER('%Smith%')
+  AND QR.QA_CREATION_DATE &gt;= SYSDATE - 90
+ORDER BY QR.QA_CREATION_DATE DESC;
+</code></pre>
+<hr />
+<h3 id="16-work-orders-with-the-most-part-transactions-last-30-days">16. Work orders with the most part transactions — last 30 days</h3>
+<pre><code class="language-sql">SELECT DISTINCT
+    EWO.WIP_ENTITY_NAME,
+    EWO.ASSET_NUMBER,
+    COUNT(MMT.TRANSACTION_ID) AS PART_TRANSACTIONS
+FROM APPS.EAM_WORK_ORDERS_V EWO
+         JOIN INV.MTL_MATERIAL_TRANSACTIONS MMT
+              ON  MMT.TRANSACTION_SOURCE_ID      = EWO.WIP_ENTITY_ID
+                  AND MMT.ORGANIZATION_ID            = EWO.ORGANIZATION_ID
+                  AND MMT.TRANSACTION_SOURCE_TYPE_ID = 5
+WHERE
+    EWO.ORGANIZATION_ID  = 1169
+  AND MMT.TRANSACTION_DATE &gt;= SYSDATE - 30
+GROUP BY
+    EWO.WIP_ENTITY_NAME,
+    EWO.ASSET_NUMBER
+ORDER BY PART_TRANSACTIONS DESC
+    FETCH FIRST 10 ROWS ONLY;
+</code></pre>
+<p>This query now acts as the summary layer for <code>run_top_part_transactions.py</code>. The workbook output is:</p>
+<ul>
+<li><code>Summary</code> sheet with the top work orders, part rollups, latest QA-derived technician, and latest inspection date</li>
+<li>one sheet per work order with part number, part description, transaction detail, and work order context</li>
+</ul>
+<p>For this report, the person/date context comes from the latest <code>QA_RESULTS</code> row for each work order:</p>
+<ul>
+<li>technician: <code>QA_RESULTS.QA_CREATED_BY -&gt; FND_USER -&gt; PER_ALL_PEOPLE_F</code></li>
+<li>latest work-order context date: max <code>QA_CREATION_DATE</code> per <code>WORK_ORDER_ID</code></li>
+</ul>
+<hr />
+<h2 id="tier-3-complex-queries-ctes-aggregations-multi-source">Tier 3 — Complex Queries (CTEs, Aggregations, Multi-source)</h2>
+<h3 id="17-top-10-assets-by-work-order-volume-last-12-months">17. Top 10 assets by work order volume — last 12 months</h3>
+<p>Full ranking with all work order detail, QA results, and technician per asset:</p>
+<pre><code class="language-sql">WITH ORG AS (
+    SELECT MP.ORGANIZATION_ID, MP.ORGANIZATION_CODE, HOU.NAME AS ORGANIZATION_NAME
+    FROM APPS.MTL_PARAMETERS MP
+             JOIN HR.HR_ALL_ORGANIZATION_UNITS HOU ON HOU.ORGANIZATION_ID = MP.ORGANIZATION_ID
+    WHERE MP.ORGANIZATION_CODE = 'XAU' AND HOU.DATE_TO IS NULL
+),
+     TOP_ASSETS AS (
+         SELECT
+             EWO.ASSET_NUMBER,
+             EWO.ASSET_DESCRIPTION,
+             ORG.ORGANIZATION_CODE,
+             ORG.ORGANIZATION_NAME,
+             ORG.ORGANIZATION_ID,
+             COUNT(DISTINCT EWO.WIP_ENTITY_ID) AS WORK_ORDER_COUNT,
+             RANK() OVER (ORDER BY COUNT(DISTINCT EWO.WIP_ENTITY_ID) DESC) AS ASSET_RANK
+         FROM APPS.EAM_WORK_ORDERS_V EWO
+                  JOIN ORG ON ORG.ORGANIZATION_ID = EWO.ORGANIZATION_ID
+         WHERE EWO.ASSET_NUMBER IS NOT NULL
+           AND EWO.CREATION_DATE &gt;= ADD_MONTHS(SYSDATE, -12)
+         GROUP BY EWO.ASSET_NUMBER, EWO.ASSET_DESCRIPTION,
+                  ORG.ORGANIZATION_CODE, ORG.ORGANIZATION_NAME, ORG.ORGANIZATION_ID
+         ORDER BY WORK_ORDER_COUNT DESC
+             FETCH FIRST 10 ROWS WITH TIES
+     )
+SELECT
+    TA.ORGANIZATION_CODE,
+    TA.ASSET_RANK,
+    TA.ASSET_NUMBER,
+    TA.ASSET_DESCRIPTION,
+    TA.WORK_ORDER_COUNT              AS TOTAL_WO_COUNT_12_MONTHS,
+    EWO.WIP_ENTITY_NAME              AS WORK_ORDER,
+    EWO.WORK_ORDER_STATUS,
+    EWO.WORK_ORDER_TYPE_DISP         AS WO_TYPE,
+    TO_CHAR(EWO.CREATION_DATE, 'MM/DD/YYYY HH24:MI:SS') AS WO_CREATED_DATE,
+    PEO.FULL_NAME                    AS TECHNICIAN,
+    FU.USER_NAME                     AS BADGE_NUMBER,
+    TO_CHAR(QR.QA_CREATION_DATE, 'MM/DD/YYYY HH24:MI:SS') AS INSPECTION_DATE,
+    QR.CHARACTER1  AS LOT_NUMBER,
+    QR.CHARACTER2  AS LOCATION,
+    QR.CHARACTER3  AS REASON,
+    QR.CHARACTER4  AS ADJUSTMENT,
+    QR.COMMENT1    AS DESCRIPTION
+FROM TOP_ASSETS TA
+         JOIN APPS.EAM_WORK_ORDERS_V EWO
+              ON  EWO.ASSET_NUMBER    = TA.ASSET_NUMBER
+                  AND EWO.ORGANIZATION_ID = TA.ORGANIZATION_ID
+                  AND EWO.CREATION_DATE  &gt;= ADD_MONTHS(SYSDATE, -12)
+         LEFT JOIN APPS.QA_RESULTS QR
+                   ON  QR.WORK_ORDER_ID   = EWO.WIP_ENTITY_ID
+                       AND QR.ORGANIZATION_ID = EWO.ORGANIZATION_ID
+         LEFT JOIN APPS.FND_USER FU
+                   ON  FU.USER_ID         = QR.QA_CREATED_BY
+         LEFT JOIN APPS.PER_ALL_PEOPLE_F PEO
+                   ON  PEO.PERSON_ID      = FU.EMPLOYEE_ID
+                       AND SYSDATE BETWEEN PEO.EFFECTIVE_START_DATE AND PEO.EFFECTIVE_END_DATE
+ORDER BY TA.ASSET_RANK, TA.ASSET_NUMBER, EWO.CREATION_DATE DESC;
+</code></pre>
+<hr />
+<h3 id="18-audit-trail-quick-version-everything-a-user-touched">18. Audit trail — quick version (everything a user touched)</h3>
+<pre><code class="language-sql">SELECT *
+FROM (
+         SELECT
+             'QA_RESULTS'           AS source_table,
+             qr.work_order_id       AS entity_id,
+             qr.qa_last_update_date AS change_date
+         FROM APPS.QA_RESULTS qr
+         WHERE qr.qa_last_updated_by = 35566
+         UNION ALL
+         SELECT
+             'WIP_ENTITIES',
+             we.wip_entity_id,
+             we.last_update_date
+         FROM APPS.WIP_ENTITIES we
+         WHERE we.last_updated_by = 35566
+         UNION ALL
+         SELECT
+             'WIP_OPERATIONS',
+             wo.wip_entity_id,
+             wo.last_update_date
+         FROM APPS.WIP_OPERATIONS wo
+         WHERE wo.last_updated_by = 35566
+     )
+ORDER BY change_date DESC;
+</code></pre>
+<hr />
+<h3 id="19-audit-trail-full-version-created-and-updated-with-date-filter">19. Audit trail — full version (created and updated, with date filter)</h3>
+<pre><code class="language-sql">SELECT *
+FROM (
+         SELECT
+             'QA_RESULTS'        AS source_table,
+             qr.work_order_id    AS entity_id,
+             NVL(qr.qa_last_update_date, qr.qa_creation_date) AS change_date,
+             CASE
+                 WHEN qr.qa_created_by      = 35566 THEN 'CREATED'
+                 WHEN qr.qa_last_updated_by = 35566 THEN 'UPDATED'
+                 END AS action
+         FROM APPS.QA_RESULTS qr
+         WHERE 35566 IN (qr.qa_created_by, qr.qa_last_updated_by)
+           AND NVL(qr.qa_last_update_date, qr.qa_creation_date)
+             &gt;= TO_DATE('25-JAN-2026','DD-MON-YYYY')
+         UNION ALL
+         SELECT
+             'WIP_ENTITIES',
+             we.wip_entity_id,
+             NVL(we.last_update_date, we.creation_date),
+             CASE
+             WHEN we.created_by      = 35566 THEN 'CREATED'
+             WHEN we.last_updated_by = 35566 THEN 'UPDATED'
+             END
+         FROM APPS.WIP_ENTITIES we
+         WHERE 35566 IN (we.created_by, we.last_updated_by)
+           AND NVL(we.last_update_date, we.creation_date)
+             &gt;= TO_DATE('25-JAN-2026','DD-MON-YYYY')
+         UNION ALL
+         SELECT
+             'WIP_OPERATIONS',
+             wo.wip_entity_id,
+             wo.last_update_date,
+             'UPDATED'
+         FROM APPS.WIP_OPERATIONS wo
+         WHERE wo.last_updated_by = 35566
+           AND wo.last_update_date &gt;= TO_DATE('25-JAN-2026','DD-MON-YYYY')
+     )
+ORDER BY change_date DESC;
+</code></pre>
+<hr />
+<h3 id="20-work-order-full-picture-header-operations-qa-parts">20. Work order full picture — header + operations + QA + parts</h3>
+<p>Everything about a single work order in one query:</p>
+<pre><code class="language-sql">SELECT
+    -- Work order header
+    EWO.WIP_ENTITY_NAME                         AS WORK_ORDER,
+    EWO.WORK_ORDER_STATUS,
+    EWO.WORK_ORDER_TYPE_DISP                    AS WO_TYPE,
+    EWO.ASSET_NUMBER,
+    EWO.ASSET_DESCRIPTION,
+    EWO.ASSET_ACTIVITY,
+    TO_CHAR(EWO.CREATION_DATE,
+            'MM/DD/YYYY HH24:MI:SS')            AS WO_CREATED,
+    TO_CHAR(EWO.SCHEDULED_START_DATE,
+            'MM/DD/YYYY')                       AS SCHEDULED_START,
+    -- Operation
+    WO.OPERATION_SEQ_NUM                        AS OP_SEQ,
+    WO.OPERATION_COMPLETED,
+    BD.DEPARTMENT_CODE,
+    -- Technician
+    PEO.FULL_NAME                               AS TECHNICIAN,
+    FU.USER_NAME                                AS BADGE_NUMBER,
+    -- QA results
+    TO_CHAR(QR.QA_CREATION_DATE,
+            'MM/DD/YYYY HH24:MI:SS')            AS INSPECTION_DATE,
+    QR.CHARACTER1                               AS LOT_NUMBER,
+    QR.CHARACTER2                               AS LOCATION,
+    QR.CHARACTER3                               AS REASON,
+    QR.CHARACTER4                               AS ADJUSTMENT,
+    QR.COMMENT1                                 AS DESCRIPTION,
+    -- Parts
+    MSI.SEGMENT1                                AS PART_NUMBER,
+    MSI.DESCRIPTION                             AS PART_DESCRIPTION,
+    MMT.TRANSACTION_QUANTITY                    AS PARTS_QTY,
+    MMT.TRANSACTION_UOM                         AS PARTS_UOM,
+    MTT.TRANSACTION_TYPE_NAME                   AS PARTS_TRANSACTION_TYPE
+FROM APPS.EAM_WORK_ORDERS_V EWO
+-- Operations
+         LEFT JOIN APPS.WIP_OPERATIONS_V WO
+                   ON  WO.WIP_ENTITY_ID   = EWO.WIP_ENTITY_ID
+                       AND WO.ORGANIZATION_ID = EWO.ORGANIZATION_ID
+-- Department
+         LEFT JOIN BOM.BOM_DEPARTMENTS BD
+                   ON  BD.DEPARTMENT_ID   = WO.DEPARTMENT_ID
+                       AND BD.ORGANIZATION_ID = WO.ORGANIZATION_ID
+-- QA results
+         LEFT JOIN APPS.QA_RESULTS QR
+                   ON  QR.WORK_ORDER_ID   = EWO.WIP_ENTITY_ID
+                       AND QR.ORGANIZATION_ID = EWO.ORGANIZATION_ID
+-- Technician
+         LEFT JOIN APPS.FND_USER FU
+                   ON  FU.USER_ID         = QR.QA_CREATED_BY
+         LEFT JOIN APPS.PER_ALL_PEOPLE_F PEO
+                   ON  PEO.PERSON_ID      = FU.EMPLOYEE_ID
+                       AND SYSDATE BETWEEN PEO.EFFECTIVE_START_DATE AND PEO.EFFECTIVE_END_DATE
+-- Parts
+         LEFT JOIN INV.MTL_MATERIAL_TRANSACTIONS MMT
+                   ON  MMT.TRANSACTION_SOURCE_ID      = EWO.WIP_ENTITY_ID
+                       AND MMT.ORGANIZATION_ID            = EWO.ORGANIZATION_ID
+                       AND MMT.TRANSACTION_SOURCE_TYPE_ID = 5
+         LEFT JOIN INV.MTL_SYSTEM_ITEMS_B MSI
+                   ON  MSI.INVENTORY_ITEM_ID = MMT.INVENTORY_ITEM_ID
+                       AND MSI.ORGANIZATION_ID   = MMT.ORGANIZATION_ID
+         LEFT JOIN INV.MTL_TRANSACTION_TYPES MTT
+                   ON  MTT.TRANSACTION_TYPE_ID = MMT.TRANSACTION_TYPE_ID
+WHERE
+    EWO.ORGANIZATION_ID  = 1169
+  AND EWO.WIP_ENTITY_NAME = 'AU14857998'
+ORDER BY
+    WO.OPERATION_SEQ_NUM,
+    QR.QA_CREATION_DATE DESC,
+    MMT.TRANSACTION_DATE DESC;
+</code></pre>
+<hr />
+<h3 id="21-asset-maintenance-burden-summary-work-order-frequency-parts-volume">21. Asset maintenance burden summary — work order frequency + parts volume</h3>
+<p>Ranks assets by maintenance activity over the last 12 months. This is not a true reliability metric; it is a workload/consumption proxy based on work order volume and issued parts:</p>
+<pre><code class="language-sql">WITH ASSET_WO AS (
+    SELECT
+        EWO.ASSET_NUMBER,
+        EWO.ASSET_DESCRIPTION,
+        COUNT(DISTINCT EWO.WIP_ENTITY_ID)   AS TOTAL_WORK_ORDERS,
+        SUM(CASE WHEN EWO.WORK_ORDER_TYPE_DISP = 'DM'
+                     THEN 1 ELSE 0 END)         AS DM_WORK_ORDERS,
+        SUM(CASE WHEN EWO.WIP_ENTITY_NAME LIKE 'PM%'
+                     THEN 1 ELSE 0 END)         AS PM_WORK_ORDERS
+    FROM APPS.EAM_WORK_ORDERS_V EWO
+    WHERE EWO.ORGANIZATION_ID = 1169
+      AND EWO.ASSET_NUMBER   IS NOT NULL
+      AND EWO.CREATION_DATE  &gt;= ADD_MONTHS(SYSDATE, -12)
+    GROUP BY EWO.ASSET_NUMBER, EWO.ASSET_DESCRIPTION
+),
+     ASSET_PARTS AS (
+         SELECT
+             EWO.ASSET_NUMBER,
+             COUNT(MMT.TRANSACTION_ID)           AS TOTAL_PART_TRANSACTIONS,
+             SUM(ABS(MMT.TRANSACTION_QUANTITY))  AS TOTAL_PARTS_CONSUMED
+         FROM APPS.EAM_WORK_ORDERS_V EWO
+                  JOIN INV.MTL_MATERIAL_TRANSACTIONS MMT
+                       ON  MMT.TRANSACTION_SOURCE_ID      = EWO.WIP_ENTITY_ID
+                           AND MMT.ORGANIZATION_ID            = EWO.ORGANIZATION_ID
+                           AND MMT.TRANSACTION_SOURCE_TYPE_ID = 5
+                           AND MMT.TRANSACTION_QUANTITY       &lt; 0     -- issues only, not returns
+         WHERE EWO.ORGANIZATION_ID = 1169
+           AND MMT.TRANSACTION_DATE &gt;= ADD_MONTHS(SYSDATE, -12)
+         GROUP BY EWO.ASSET_NUMBER
+     )
+SELECT
+    AW.ASSET_NUMBER,
+    AW.ASSET_DESCRIPTION,
+    AW.TOTAL_WORK_ORDERS,
+    AW.DM_WORK_ORDERS,
+    AW.PM_WORK_ORDERS,
+    NVL(AP.TOTAL_PART_TRANSACTIONS, 0)  AS TOTAL_PART_TRANSACTIONS,
+    NVL(AP.TOTAL_PARTS_CONSUMED, 0)     AS TOTAL_PARTS_CONSUMED,
+    RANK() OVER (ORDER BY AW.TOTAL_WORK_ORDERS DESC) AS RANK_BY_WO,
+    RANK() OVER (ORDER BY NVL(AP.TOTAL_PARTS_CONSUMED, 0) DESC) AS RANK_BY_PARTS
+FROM ASSET_WO AW
+         LEFT JOIN ASSET_PARTS AP ON AP.ASSET_NUMBER = AW.ASSET_NUMBER
+ORDER BY AW.TOTAL_WORK_ORDERS DESC
+    FETCH FIRST 20 ROWS ONLY;
+</code></pre>
+<hr />
+<h3 id="22-technician-productivity-summary-qa-submissions-per-person">22. Technician productivity summary — QA submissions per person</h3>
+<p>Ranks technicians by inspection volume over a rolling period:</p>
+<pre><code class="language-sql">SELECT
+    PEO.FULL_NAME                               AS TECHNICIAN,
+    FU.USER_NAME                                AS BADGE_NUMBER,
+    COUNT(QR.ROWID)                             AS TOTAL_INSPECTIONS,
+    COUNT(DISTINCT QR.WORK_ORDER_ID)            AS UNIQUE_WORK_ORDERS,
+    COUNT(DISTINCT EWO.ASSET_NUMBER)            AS UNIQUE_ASSETS,
+    MIN(QR.QA_CREATION_DATE)                    AS FIRST_INSPECTION,
+    MAX(QR.QA_CREATION_DATE)                    AS LAST_INSPECTION
+FROM APPS.QA_RESULTS QR
+         JOIN APPS.EAM_WORK_ORDERS_V EWO
+              ON  EWO.WIP_ENTITY_ID   = QR.WORK_ORDER_ID
+                  AND EWO.ORGANIZATION_ID = QR.ORGANIZATION_ID
+         JOIN APPS.FND_USER FU
+              ON  FU.USER_ID          = QR.QA_CREATED_BY
+         JOIN APPS.PER_ALL_PEOPLE_F PEO
+              ON  PEO.PERSON_ID       = FU.EMPLOYEE_ID
+                  AND SYSDATE BETWEEN PEO.EFFECTIVE_START_DATE AND PEO.EFFECTIVE_END_DATE
+WHERE
+    QR.ORGANIZATION_ID  = 1169
+  AND QR.QA_CREATION_DATE &gt;= ADD_MONTHS(SYSDATE, -3)
+GROUP BY
+    PEO.FULL_NAME,
+    FU.USER_NAME
+ORDER BY TOTAL_INSPECTIONS DESC
+    FETCH FIRST 20 ROWS ONLY;
+</code></pre>
+<hr />
+<h3 id="23-parts-consumption-by-asset-what-parts-does-each-asset-use-most">23. Parts consumption by asset — what parts does each asset use most</h3>
+<pre><code class="language-sql">SELECT
+    EWO.ASSET_NUMBER,
+    EWO.ASSET_DESCRIPTION,
+    MSI.SEGMENT1                                AS PART_NUMBER,
+    MSI.DESCRIPTION                             AS PART_DESCRIPTION,
+    COUNT(MMT.TRANSACTION_ID)                   AS TIMES_ISSUED,
+    SUM(ABS(MMT.TRANSACTION_QUANTITY))          AS TOTAL_QTY_CONSUMED,
+    MMT.TRANSACTION_UOM                         AS UOM
+FROM APPS.EAM_WORK_ORDERS_V EWO
+         JOIN INV.MTL_MATERIAL_TRANSACTIONS MMT
+              ON  MMT.TRANSACTION_SOURCE_ID      = EWO.WIP_ENTITY_ID
+                  AND MMT.ORGANIZATION_ID            = EWO.ORGANIZATION_ID
+                  AND MMT.TRANSACTION_SOURCE_TYPE_ID = 5
+                  AND MMT.TRANSACTION_QUANTITY       &lt; 0      -- issues only
+         JOIN INV.MTL_SYSTEM_ITEMS_B MSI
+              ON  MSI.INVENTORY_ITEM_ID = MMT.INVENTORY_ITEM_ID
+                  AND MSI.ORGANIZATION_ID   = MMT.ORGANIZATION_ID
+WHERE
+    EWO.ORGANIZATION_ID  = 1169
+  AND EWO.ASSET_NUMBER = 'AU-AFL31600-00'
+  AND MMT.TRANSACTION_DATE &gt;= ADD_MONTHS(SYSDATE, -12)
+GROUP BY
+    EWO.ASSET_NUMBER,
+    EWO.ASSET_DESCRIPTION,
+    MSI.SEGMENT1,
+    MSI.DESCRIPTION,
+    MMT.TRANSACTION_UOM
+ORDER BY TOTAL_QTY_CONSUMED DESC;
+</code></pre>
+<hr />
+<h3 id="24-qa-results-last-24-hours-with-technician-and-group">24. QA results — last 24 hours with technician and group</h3>
+<pre><code class="language-sql">SELECT
+    EWO.WIP_ENTITY_NAME                         AS WORK_ORDER,
+    EWO.ASSET_NUMBER,
+    EWO.ASSET_DESCRIPTION,
+    QUG.PERSON_NAME                             AS TECHNICIAN,
+    QUG.USER_NAME                               AS BADGE_NUMBER,
+    QUG.GROUP_NAME                              AS QA_GROUP,
+    TO_CHAR(QR.QA_CREATION_DATE,
+            'MM/DD/YYYY HH24:MI:SS')            AS INSPECTION_DATE,
+    QR.CHARACTER1                               AS LOT_NUMBER,
+    QR.CHARACTER2                               AS LOCATION,
+    QR.CHARACTER3                               AS REASON,
+    QR.CHARACTER4                               AS ADJUSTMENT,
+    QR.COMMENT1                                 AS DESCRIPTION
+FROM APPS.QA_RESULTS QR
+JOIN APPS.EAM_WORK_ORDERS_V EWO
+    ON  EWO.WIP_ENTITY_ID   = QR.WORK_ORDER_ID
+    AND EWO.ORGANIZATION_ID = QR.ORGANIZATION_ID
+JOIN APPS.QA_USER_GROUP_V QUG
+    ON  QUG.USER_ID         = QR.QA_CREATED_BY
+    AND QUG.STATUS          = 'A'
+WHERE
+    QR.ORGANIZATION_ID    = 1169
+    AND QR.QA_CREATION_DATE &gt;= SYSDATE - 1
+ORDER BY QR.QA_CREATION_DATE DESC;
+</code></pre>
+<hr />
+<h3 id="25-released-pm-work-orders-currently-open">25. Released PM work orders — currently open</h3>
+<pre><code class="language-sql">SELECT
+    EWO.WIP_ENTITY_NAME                         AS WORK_ORDER,
+    EWO.ASSET_NUMBER,
+    EWO.ASSET_DESCRIPTION,
+    EWO.ASSET_ACTIVITY,
+    EWO.WORK_ORDER_STATUS,
+    EWO.CLASS_CODE,
+    TO_CHAR(EWO.CREATION_DATE,
+            'MM/DD/YYYY')                       AS CREATED,
+    TO_CHAR(EWO.SCHEDULED_START_DATE,
+            'MM/DD/YYYY')                       AS SCHEDULED_START,
+    EWO.DESCRIPTION                             AS WO_DESCRIPTION
+FROM APPS.EAM_WORK_ORDERS_V EWO
+WHERE
+    EWO.ORGANIZATION_ID    = 1169
+    AND EWO.WIP_ENTITY_NAME LIKE 'PM%'
+    AND EWO.WORK_ORDER_STATUS = 'Released'
+ORDER BY EWO.SCHEDULED_START_DATE ASC;
+</code></pre>
+<hr />
+<h3 id="26-all-employees-assigned-to-a-specific-resource-reverse-of-q11">26. All employees assigned to a specific resource (reverse of Q11)</h3>
+<p>Given a resource code, find who is assigned to it:</p>
+<pre><code class="language-sql">SELECT
+    BR.RESOURCE_CODE,
+    BR.DESCRIPTION          AS RESOURCE_DESCRIPTION,
+    BR.RESOURCE_TYPE,
+    PEO.FULL_NAME,
+    FU.USER_NAME            AS BADGE_NUMBER,
+    FU.EMAIL_ADDRESS,
+    BRE.EFFECTIVE_START_DATE,
+    BRE.EFFECTIVE_END_DATE
+FROM BOM.BOM_RESOURCES BR
+JOIN BOM.BOM_RESOURCE_EMPLOYEES BRE
+    ON  BRE.RESOURCE_ID     = BR.RESOURCE_ID
+    AND BRE.ORGANIZATION_ID = BR.ORGANIZATION_ID
+JOIN APPS.PER_ALL_PEOPLE_F PEO
+    ON  PEO.PERSON_ID       = BRE.PERSON_ID
+    AND SYSDATE BETWEEN PEO.EFFECTIVE_START_DATE AND PEO.EFFECTIVE_END_DATE
+LEFT JOIN APPS.FND_USER FU
+    ON  FU.EMPLOYEE_ID      = PEO.PERSON_ID
+WHERE
+    BR.ORGANIZATION_ID   = 1169
+    AND BR.RESOURCE_CODE = 'YOUR-RESOURCE-CODE'   -- replace with resource code
+    AND SYSDATE         &lt;= BRE.EFFECTIVE_END_DATE
+ORDER BY PEO.FULL_NAME;
+</code></pre>
+<hr />
+<h3 id="27-all-work-orders-for-a-department-last-90-days">27. All work orders for a department — last 90 days</h3>
+<p>Find all work orders where the primary operation belongs to a specific department:</p>
+<pre><code class="language-sql">SELECT
+    EWO.WIP_ENTITY_NAME                         AS WORK_ORDER,
+    EWO.ASSET_NUMBER,
+    EWO.ASSET_DESCRIPTION,
+    EWO.WORK_ORDER_STATUS,
+    EWO.WORK_ORDER_TYPE_DISP                    AS WO_TYPE,
+    BD.DEPARTMENT_CODE,
+    BD.DESCRIPTION                              AS DEPARTMENT_DESCRIPTION,
+    WO.OPERATION_SEQ_NUM                        AS OP_SEQ,
+    WO.OPERATION_COMPLETED,
+    TO_CHAR(EWO.CREATION_DATE,
+            'MM/DD/YYYY')                       AS CREATED,
+    TO_CHAR(EWO.SCHEDULED_START_DATE,
+            'MM/DD/YYYY')                       AS SCHEDULED_START
+FROM APPS.EAM_WORK_ORDERS_V EWO
+JOIN APPS.WIP_OPERATIONS_V WO
+    ON  WO.WIP_ENTITY_ID   = EWO.WIP_ENTITY_ID
+    AND WO.ORGANIZATION_ID = EWO.ORGANIZATION_ID
+    AND WO.OPERATION_SEQ_NUM = 10
+JOIN BOM.BOM_DEPARTMENTS BD
+    ON  BD.DEPARTMENT_ID   = WO.DEPARTMENT_ID
+    AND BD.ORGANIZATION_ID = WO.ORGANIZATION_ID
+WHERE
+    EWO.ORGANIZATION_ID  = 1169
+    AND BD.DEPARTMENT_CODE = 'YOUR-DEPT-CODE'   -- replace with department code
+    AND EWO.CREATION_DATE &gt;= SYSDATE - 90
+ORDER BY EWO.CREATION_DATE DESC;
+</code></pre>
+<hr />
+<h3 id="28-all-resources-and-their-currently-assigned-employees-full-roster">28. All resources and their currently assigned employees — full roster</h3>
+<p>Lists every active Person-type resource with all employees currently assigned:</p>
+<pre><code class="language-sql">SELECT
+    BR.RESOURCE_CODE,
+    BR.DESCRIPTION          AS RESOURCE_DESCRIPTION,
+    BR.UNIT_OF_MEASURE,
+    PEO.FULL_NAME,
+    FU.USER_NAME            AS BADGE_NUMBER,
+    FU.EMAIL_ADDRESS,
+    BRE.EFFECTIVE_START_DATE,
+    BRE.EFFECTIVE_END_DATE
+FROM BOM.BOM_RESOURCES BR
+JOIN BOM.BOM_RESOURCE_EMPLOYEES BRE
+    ON  BRE.RESOURCE_ID     = BR.RESOURCE_ID
+    AND BRE.ORGANIZATION_ID = BR.ORGANIZATION_ID
+JOIN APPS.PER_ALL_PEOPLE_F PEO
+    ON  PEO.PERSON_ID       = BRE.PERSON_ID
+    AND SYSDATE BETWEEN PEO.EFFECTIVE_START_DATE AND PEO.EFFECTIVE_END_DATE
+LEFT JOIN APPS.FND_USER FU
+    ON  FU.EMPLOYEE_ID      = PEO.PERSON_ID
+WHERE
+    BR.ORGANIZATION_ID  = 1169
+    AND BR.RESOURCE_TYPE = 2              -- Person resources only
+    AND BR.DISABLE_DATE IS NULL           -- Active resources only
+    AND SYSDATE        &lt;= BRE.EFFECTIVE_END_DATE
+ORDER BY BR.RESOURCE_CODE, PEO.FULL_NAME;
+</code></pre>
+<hr />
+<h2 id="quick-reference">Quick Reference</h2>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>Query</th>
+<th>Tables</th>
+<th>Complexity</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>Verify org code</td>
+<td>MTL_PARAMETERS</td>
+<td>Simple</td>
+</tr>
+<tr>
+<td>2</td>
+<td>Look up a user</td>
+<td>FND_USER</td>
+<td>Simple</td>
+</tr>
+<tr>
+<td>3</td>
+<td>Active users with EAM responsibility</td>
+<td>FND_USER + 4 joins</td>
+<td>Simple</td>
+</tr>
+<tr>
+<td>4</td>
+<td>All responsibilities for a user</td>
+<td>FND_USER + 4 joins</td>
+<td>Simple</td>
+</tr>
+<tr>
+<td>5</td>
+<td>QA groups for a user</td>
+<td>QA_USER_GROUP_V</td>
+<td>Simple</td>
+</tr>
+<tr>
+<td>6</td>
+<td>All members of a QA group</td>
+<td>QA_USER_GROUP_V</td>
+<td>Simple</td>
+</tr>
+<tr>
+<td>7</td>
+<td>Released work orders for an asset</td>
+<td>EAM_WORK_ORDERS_V</td>
+<td>Simple</td>
+</tr>
+<tr>
+<td>8</td>
+<td>Cancelled work orders last 15 days</td>
+<td>EAM_WORK_ORDERS_V</td>
+<td>Simple</td>
+</tr>
+<tr>
+<td>9</td>
+<td>QA results with technician name</td>
+<td>EAM_WORK_ORDERS_V + QA_RESULTS + FND_USER + PER_ALL_PEOPLE_F</td>
+<td>Medium</td>
+</tr>
+<tr>
+<td>10</td>
+<td>Parts charged to a work order</td>
+<td>EAM_WORK_ORDERS_V + MTL_MATERIAL_TRANSACTIONS + MTL_SYSTEM_ITEMS_B + MTL_TRANSACTION_TYPES</td>
+<td>Medium</td>
+</tr>
+<tr>
+<td>11</td>
+<td>Resources assigned to an employee</td>
+<td>PER_ALL_PEOPLE_F + BOM_RESOURCE_EMPLOYEES + BOM_RESOURCES</td>
+<td>Medium</td>
+</tr>
+<tr>
+<td>12</td>
+<td>Work order operations with department</td>
+<td>EAM_WORK_ORDERS_V + WIP_OPERATIONS_V + BOM_DEPARTMENTS</td>
+<td>Medium</td>
+</tr>
+<tr>
+<td>13</td>
+<td>Open DM work orders at step 10</td>
+<td>EAM_WORK_ORDERS_V + WIP_OPERATIONS_V + WIP_OP_RESOURCE_INSTANCES_V + MTL_PARAMETERS</td>
+<td>Medium</td>
+</tr>
+<tr>
+<td>14</td>
+<td>QA results with QA group</td>
+<td>EAM_WORK_ORDERS_V + QA_RESULTS + QA_USER_GROUP_V</td>
+<td>Medium</td>
+</tr>
+<tr>
+<td>15</td>
+<td>Work orders completed by an employee</td>
+<td>PER_ALL_PEOPLE_F + FND_USER + QA_RESULTS + EAM_WORK_ORDERS_V</td>
+<td>Medium</td>
+</tr>
+<tr>
+<td>16</td>
+<td>Work orders with most part transactions</td>
+<td>EAM_WORK_ORDERS_V + MTL_MATERIAL_TRANSACTIONS + QA_RESULTS + FND_USER + PER_ALL_PEOPLE_F</td>
+<td>Medium</td>
+</tr>
+<tr>
+<td>17</td>
+<td>Top 10 assets by work order volume</td>
+<td>CTE + 6 tables</td>
+<td>Complex</td>
+</tr>
+<tr>
+<td>18</td>
+<td>Audit trail — quick</td>
+<td>QA_RESULTS + WIP_ENTITIES + WIP_OPERATIONS</td>
+<td>Complex</td>
+</tr>
+<tr>
+<td>19</td>
+<td>Audit trail — full with date filter</td>
+<td>QA_RESULTS + WIP_ENTITIES + WIP_OPERATIONS</td>
+<td>Complex</td>
+</tr>
+<tr>
+<td>20</td>
+<td>Work order full picture</td>
+<td>8 tables, all LEFT JOINs</td>
+<td>Complex</td>
+</tr>
+<tr>
+<td>21</td>
+<td>Asset maintenance burden summary</td>
+<td>CTE + EAM_WORK_ORDERS_V + MTL_MATERIAL_TRANSACTIONS</td>
+<td>Complex</td>
+</tr>
+<tr>
+<td>22</td>
+<td>Technician productivity summary</td>
+<td>QA_RESULTS + EAM_WORK_ORDERS_V + FND_USER + PER_ALL_PEOPLE_F</td>
+<td>Complex</td>
+</tr>
+<tr>
+<td>23</td>
+<td>Parts consumption by asset</td>
+<td>EAM_WORK_ORDERS_V + MTL_MATERIAL_TRANSACTIONS + MTL_SYSTEM_ITEMS_B</td>
+<td>Complex</td>
+</tr>
+<tr>
+<td>24</td>
+<td>QA results last 24 hours with technician and group</td>
+<td>QA_RESULTS + EAM_WORK_ORDERS_V + QA_USER_GROUP_V</td>
+<td>Medium</td>
+</tr>
+<tr>
+<td>25</td>
+<td>Released PM work orders — currently open</td>
+<td>EAM_WORK_ORDERS_V</td>
+<td>Simple</td>
+</tr>
+<tr>
+<td>26</td>
+<td>All employees assigned to a resource (reverse lookup)</td>
+<td>BOM_RESOURCES + BOM_RESOURCE_EMPLOYEES + PER_ALL_PEOPLE_F + FND_USER</td>
+<td>Medium</td>
+</tr>
+<tr>
+<td>27</td>
+<td>All work orders for a department</td>
+<td>EAM_WORK_ORDERS_V + WIP_OPERATIONS_V + BOM_DEPARTMENTS</td>
+<td>Medium</td>
+</tr>
+<tr>
+<td>28</td>
+<td>Full resource roster — all active Person resources</td>
+<td>BOM_RESOURCES + BOM_RESOURCE_EMPLOYEES + PER_ALL_PEOPLE_F + FND_USER</td>
+<td>Medium</td>
+</tr>
+</tbody>
+</table>
+</main>
+</body>
+</html>
